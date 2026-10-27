@@ -1,0 +1,24 @@
+{
+  "entities": {
+    "Notification": {
+      "title": "Notification",
+      "description": "System notification for users",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target user ID" },
+        "role": { "type": "string", "description": "Target role (admin, marketer, guard)" },
+        "type": { "type": "string", "description": "Type: booking, checkout, insurance" },
+        "message": { "type": "string", "description": "Notification content" },
+        "read": { "type": "boolean", "description": "Read status" },
+        "createdAt": { "type": "string", "description": "Creation time" }
+      },
+      "required": ["userId", "type", "message", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "notifications": {
+      "schema": "Notification",
+      "description": "Collection of system notifications"
+    }
+  }
+}
