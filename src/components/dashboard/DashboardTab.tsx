@@ -1141,56 +1141,50 @@ ${prop?.iban || 'SA0380000201608010998877'}
         </div>
       )}
 
-      {/* Top Header Row matching reference design */}
-      <div className="bg-transparent flex items-center justify-between pt-1 px-1 font-['Tajawal',sans-serif]">
+      {/* Top Action Buttons Row */}
+      <div className="bg-transparent flex items-center justify-between pt-0.5 px-0.5 font-['Tajawal',sans-serif]">
         <div className="flex items-center gap-2">
           {!isGuard && (
             <button
               onClick={() => setBookingModalOpen(true)}
-              className="btn-mauve-shiny font-bold py-2.5 px-4 rounded-2xl shadow-md flex items-center gap-1.5 transition-all text-xs sm:text-sm cursor-pointer"
+              className="btn-mauve-shiny font-bold py-2 px-3.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-all text-xs cursor-pointer"
             >
-              <Plus className="w-4 h-4 text-purple-200" />
+              <Plus className="w-3.5 h-3.5 text-purple-200" />
               <span className="leading-none">الحجز / بدون حجز +</span>
             </button>
           )}
 
           <button
             onClick={() => showToast('تم تحديث البيانات الحية بنجاح')}
-            className="w-10 h-10 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center justify-center text-slate-700 hover:text-purple-700 hover:bg-purple-50 transition-all cursor-pointer"
+            className="w-8.5 h-8.5 rounded-xl bg-white border border-slate-200 shadow-2xs flex items-center justify-center text-slate-700 hover:text-purple-700 hover:bg-purple-50 transition-all cursor-pointer"
             title="تحديث البيانات"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
-        </div>
-
-        <div className="text-right">
-          <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-500 tracking-tight flex items-center justify-end gap-2">
-            <span>متابعة فورية وسريعة لعملية في صف واحد أفقي</span>
-          </h2>
         </div>
       </div>
 
-      {/* 4 Statistical KPI Cards (مطابقة تماماً للصورة المرفقة IMG_2037_43d04e3d.jpeg والترتيب الأفقي) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 font-['Tajawal',sans-serif]" dir="rtl">
+      {/* 4 Statistical KPI Cards (حجم متناسق ومضغوط ليتناسب تماماً مع أبعاد الشاشة) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 font-['Tajawal',sans-serif]" dir="rtl">
         {/* 1. دخول اليوم (Blue #0284c7) */}
         <div
           onClick={() => setActiveFilter('arrivals')}
-          className={`bg-white rounded-[22px] border transition-all p-4 sm:p-5 cursor-pointer text-right flex flex-col justify-between min-h-[105px] sm:min-h-[115px] select-none shadow-xs hover:shadow-md ${
+          className={`bg-white rounded-2xl border transition-all p-3 sm:p-3.5 cursor-pointer text-right flex flex-col justify-between min-h-[84px] sm:min-h-[92px] select-none shadow-xs hover:shadow-md ${
             activeFilter === 'arrivals'
-              ? 'border-[#0284c7] ring-2 ring-[#0284c7]/40 ring-offset-2'
+              ? 'border-[#0284c7] ring-2 ring-[#0284c7]/40 ring-offset-1'
               : 'border-slate-200/90 hover:border-[#0284c7]/60'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="font-bold text-sm sm:text-base text-[#0284c7]">دخول اليوم</span>
-            <span className="w-3 h-3 rounded-full bg-[#0284c7] shrink-0" />
+            <span className="font-bold text-xs sm:text-sm text-[#0284c7]">دخول اليوم</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#0284c7] shrink-0" />
           </div>
-          <div className="flex items-end justify-between pt-2">
-            <span className="text-3xl sm:text-4xl font-mono font-black text-[#0284c7]">
+          <div className="flex items-end justify-between pt-1">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-[#0284c7] leading-none">
               {visibleArrivals.length}
             </span>
-            <span className="text-[11px] text-[#0284c7]/70 font-bold">
-              {activeFilter === 'arrivals' ? '● معروض الآن' : ''}
+            <span className="text-[10px] sm:text-[11px] text-[#0284c7]/70 font-bold">
+              {activeFilter === 'arrivals' ? '● معروض' : ''}
             </span>
           </div>
         </div>
@@ -1198,22 +1192,22 @@ ${prop?.iban || 'SA0380000201608010998877'}
         {/* 2. خروج اليوم (Red/Rose #e11d48) */}
         <div
           onClick={() => setActiveFilter('departures')}
-          className={`bg-white rounded-[22px] border transition-all p-4 sm:p-5 cursor-pointer text-right flex flex-col justify-between min-h-[105px] sm:min-h-[115px] select-none shadow-xs hover:shadow-md ${
+          className={`bg-white rounded-2xl border transition-all p-3 sm:p-3.5 cursor-pointer text-right flex flex-col justify-between min-h-[84px] sm:min-h-[92px] select-none shadow-xs hover:shadow-md ${
             activeFilter === 'departures'
-              ? 'border-[#e11d48] ring-2 ring-[#e11d48]/40 ring-offset-2'
+              ? 'border-[#e11d48] ring-2 ring-[#e11d48]/40 ring-offset-1'
               : 'border-slate-200/90 hover:border-[#e11d48]/60'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="font-bold text-sm sm:text-base text-[#e11d48]">خروج اليوم</span>
-            <span className="w-3 h-3 rounded-full bg-[#e11d48] shrink-0" />
+            <span className="font-bold text-xs sm:text-sm text-[#e11d48]">خروج اليوم</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#e11d48] shrink-0" />
           </div>
-          <div className="flex items-end justify-between pt-2">
-            <span className="text-3xl sm:text-4xl font-mono font-black text-[#e11d48]">
+          <div className="flex items-end justify-between pt-1">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-[#e11d48] leading-none">
               {visibleDepartures.length}
             </span>
-            <span className="text-[11px] text-[#e11d48]/70 font-bold">
-              {activeFilter === 'departures' ? '● معروض الآن' : ''}
+            <span className="text-[10px] sm:text-[11px] text-[#e11d48]/70 font-bold">
+              {activeFilter === 'departures' ? '● معروض' : ''}
             </span>
           </div>
         </div>
@@ -1221,22 +1215,22 @@ ${prop?.iban || 'SA0380000201608010998877'}
         {/* 3. كافة المحجوزات (Amber/Brown #b45309) */}
         <div
           onClick={() => setActiveFilter('all')}
-          className={`bg-white rounded-[22px] border transition-all p-4 sm:p-5 cursor-pointer text-right flex flex-col justify-between min-h-[105px] sm:min-h-[115px] select-none shadow-xs hover:shadow-md ${
+          className={`bg-white rounded-2xl border transition-all p-3 sm:p-3.5 cursor-pointer text-right flex flex-col justify-between min-h-[84px] sm:min-h-[92px] select-none shadow-xs hover:shadow-md ${
             activeFilter === 'all'
-              ? 'border-[#b45309] ring-2 ring-[#b45309]/40 ring-offset-2'
+              ? 'border-[#b45309] ring-2 ring-[#b45309]/40 ring-offset-1'
               : 'border-slate-200/90 hover:border-[#b45309]/60'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="font-bold text-sm sm:text-base text-[#b45309]">كافة المحجوزات</span>
-            <Clock className="w-5 h-5 text-[#b45309] shrink-0" />
+            <span className="font-bold text-xs sm:text-sm text-[#b45309]">كافة المحجوزات</span>
+            <Clock className="w-4 h-4 text-[#b45309] shrink-0" />
           </div>
-          <div className="flex items-end justify-between pt-2">
-            <span className="text-3xl sm:text-4xl font-mono font-black text-[#b45309]">
+          <div className="flex items-end justify-between pt-1">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-[#b45309] leading-none">
               {roleFilteredBookings.filter((b) => b.status !== 'cancelled').length}
             </span>
-            <span className="text-[11px] text-[#b45309]/70 font-bold">
-              {activeFilter === 'all' ? '● معروض الآن' : ''}
+            <span className="text-[10px] sm:text-[11px] text-[#b45309]/70 font-bold">
+              {activeFilter === 'all' ? '● معروض' : ''}
             </span>
           </div>
         </div>
@@ -1244,21 +1238,21 @@ ${prop?.iban || 'SA0380000201608010998877'}
         {/* 4. تتبع الحجز (Orange #c2410c مع نزيل اليوم) */}
         <div
           onClick={() => setActiveFilter('tracking')}
-          className={`bg-white rounded-[22px] border transition-all p-4 sm:p-5 cursor-pointer text-right flex flex-col justify-between min-h-[105px] sm:min-h-[115px] select-none shadow-xs hover:shadow-md ${
+          className={`bg-white rounded-2xl border transition-all p-3 sm:p-3.5 cursor-pointer text-right flex flex-col justify-between min-h-[84px] sm:min-h-[92px] select-none shadow-xs hover:shadow-md ${
             activeFilter === 'tracking'
-              ? 'border-[#c2410c] ring-2 ring-[#c2410c]/40 ring-offset-2'
+              ? 'border-[#c2410c] ring-2 ring-[#c2410c]/40 ring-offset-1'
               : 'border-slate-200/90 hover:border-[#c2410c]/60'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="font-bold text-sm sm:text-base text-[#c2410c]">تتبع الحجز</span>
-            <Settings className="w-5 h-5 text-[#c2410c] shrink-0" />
+            <span className="font-bold text-xs sm:text-sm text-[#c2410c]">تتبع الحجز</span>
+            <Settings className="w-4 h-4 text-[#c2410c] shrink-0" />
           </div>
-          <div className="flex items-end justify-between pt-2">
-            <span className="text-3xl sm:text-4xl font-mono font-black text-[#c2410c]">
+          <div className="flex items-end justify-between pt-1">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-[#c2410c] leading-none">
               {trackingBookings.length}
             </span>
-            <span className="text-xs sm:text-sm font-bold text-[#c2410c]">
+            <span className="text-[11px] sm:text-xs font-bold text-[#c2410c]">
               نزيل اليوم
             </span>
           </div>
