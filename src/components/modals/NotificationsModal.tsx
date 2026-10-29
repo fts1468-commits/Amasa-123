@@ -15,6 +15,10 @@ import {
   Radio,
   Megaphone,
   MessageCircle,
+  Download,
+  ExternalLink,
+  Eye,
+  Paperclip,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -42,6 +46,21 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
   } = useApp();
 
   const [requestingPerm, setRequestingPerm] = useState(false);
+  const [previewReceipt, setPreviewReceipt] = useState<{ url: string; name?: string; title?: string } | null>(null);
+
+  const handleDownloadReceipt = (url?: string, filename?: string) => {
+    if (!url) return;
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || `receipt-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      window.open(url, '_blank');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -199,7 +218,12 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
             )}
 
             <div className="flex items-center justify-between px-1">
-              <span className="font-bold text-slate-700 text-xs">سجل الإشعارات والتنبيهات:</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-slate-700 text-xs">سجل الإشعارات والتنبيهات:</span>
+                <span className="text-[10px] bg-purple-100 text-purple-900 px-2 py-0.5 rounded-full font-medium">
+                  حذف تلقائي لأي تنبيه مر عليه أسبوع ⏳
+                </span>
+              </div>
               <span className="text-[10px] text-slate-400">{filteredNotifications.length} إشعار</span>
             </div>
 
@@ -303,6 +327,38 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
                           </button>
                         </div>
                       )}
+
+                      {/* Receipt / Attachment 1-Click Preview & Download */}
+                      {notif.receiptUrl && (
+                        <div className="pt-2">
+                          <div className="bg-emerald-50/90 border border-emerald-300/80 rounded-xl p-2 flex items-center justify-between gap-2 shadow-2xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Paperclip className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                              <span className="font-bold text-emerald-950 text-[11px] truncate">
+                                {notif.receiptName || 'إيصال / صورة مرفقة'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewReceipt({ url: notif.receiptUrl!, name: notif.receiptName, title: notif.title })}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>معاينة</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadReceipt(notif.receiptUrl, notif.receiptName)}
+                                className="p-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg cursor-pointer transition-colors shadow-2xs"
+                                title="حفظ وتحميل الصورة بضغطة زر واحدة"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -332,6 +388,82 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
           </button>
         </div>
       </div>
+
+      {/* Receipt Image Preview Modal inside Notifications */}
+      {previewReceipt && (
+        <div
+          className="fixed inset-0 z-60 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          dir="rtl"
+          onClick={() => setPreviewReceipt(null)}
+        >
+          <div
+            className="bg-white rounded-3xl w-full max-w-xl max-h-[90vh] overflow-hidden shadow-2xl border border-purple-200 flex flex-col text-right animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-purple-900 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-4 h-4 text-purple-200" />
+                <h4 className="font-bold text-sm text-white truncate max-w-xs sm:max-w-md">
+                  {previewReceipt.title || previewReceipt.name || 'معاينة الإيصال المرفق'}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewReceipt(null)}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex-1 flex items-center justify-center bg-slate-50 min-h-[220px]">
+              {previewReceipt.url.startsWith('data:image') ||
+              previewReceipt.url.startsWith('http') ||
+              previewReceipt.url.startsWith('/') ||
+              previewReceipt.url.startsWith('blob:') ? (
+                <img
+                  src={previewReceipt.url}
+                  alt="إيصال مرفق"
+                  className="max-h-[60vh] w-auto max-w-full rounded-2xl object-contain shadow-xs border border-slate-200"
+                />
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  <p className="font-bold">{previewReceipt.name || 'ملف مرفق'}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-white border-t border-slate-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-1">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadReceipt(previewReceipt.url, previewReceipt.name)}
+                  className="flex-1 py-2 px-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>حفظ وتحميل الصورة بضغطة زر</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.open(previewReceipt.url, '_blank')}
+                  className="py-2 px-3 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 rounded-xl font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-all"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>فتح بالحجم الكامل</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPreviewReceipt(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

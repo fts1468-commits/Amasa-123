@@ -36,6 +36,8 @@ const MainAppContent: React.FC = () => {
     setIsAuthModalOpen,
     adminBroadcastModalOpen,
     setAdminBroadcastModalOpen,
+    notificationsModalOpen,
+    setNotificationsModalOpen,
   } = useApp();
 
   // Enforce tab permissions: if current tab is hidden by permissions, fall back to accessible tab
@@ -51,7 +53,6 @@ const MainAppContent: React.FC = () => {
     }
   }, [activeTab, canViewCalendar, canViewProperties, canViewDashboard, canViewMarketers, isGuard, setActiveTab]);
 
-  const [notificationsModalOpen, setNotificationsModalOpen] = useState(false);
   const [propertyModalType, setPropertyModalType] = useState<'details' | 'photos' | 'location' | 'contract' | null>(null);
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
 

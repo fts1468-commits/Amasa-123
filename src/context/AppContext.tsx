@@ -281,6 +281,10 @@ export interface AppContextType {
   filteredNotifications: AppNotification[];
   unreadNotificationsCount: number;
   markNotificationsAsRead: () => void;
+  markSingleNotificationAsRead: (notificationId: string) => void;
+  notificationsModalOpen: boolean;
+  setNotificationsModalOpen: (open: boolean) => void;
+  openNotificationsModal: () => void;
 
   commissionRequests: CommissionRequest[];
   getEligibleCommissionBookings: (marketerId: string, fromDate: string, toDate: string) => Booking[];
@@ -316,7 +320,19 @@ export interface AppContextType {
   toggleSound: () => void;
   activeToast: ToastData | null;
   dismissToast: () => void;
-  triggerBrowserNotification: (title: string, body: string, type?: ToastData['type']) => void;
+  triggerBrowserNotification: (
+    title: string,
+    body: string,
+    type?: ToastData['type'],
+    meta?: {
+      targetAudienceText?: string;
+      targetRole?: 'admin' | 'marketer' | 'guard' | 'all';
+      receiptUrl?: string;
+      receiptName?: string;
+      linkToBookingId?: string;
+      notificationId?: string;
+    }
+  ) => void;
   sendTestNotification: () => void;
 
   adminBroadcasts: AdminBroadcastMessage[];
@@ -350,6 +366,32 @@ export const fillTemplate = (template: string, vars: Record<string, string | num
     result = result.replace(regex, String(v ?? ''));
   });
   return result;
+};
+
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const isNotificationOlderThanOneWeek = (notif: AppNotification, now = Date.now()): boolean => {
+  if (notif.createdAt) {
+    const createdTime = typeof notif.createdAt === 'number' ? notif.createdAt : new Date(notif.createdAt).getTime();
+    if (!isNaN(createdTime) && createdTime > 0) {
+      return (now - createdTime) > ONE_WEEK_MS;
+    }
+  }
+  const match = notif.id.match(/\d{10,13}/);
+  if (match) {
+    const idTime = parseInt(match[0], 10);
+    const timeInMs = idTime < 10000000000 ? idTime * 1000 : idTime;
+    if (!isNaN(timeInMs) && timeInMs > 1500000000000) {
+      return (now - timeInMs) > ONE_WEEK_MS;
+    }
+  }
+  if (notif.timestamp && /\d{4}-\d{2}-\d{2}/.test(notif.timestamp)) {
+    const parsed = new Date(notif.timestamp).getTime();
+    if (!isNaN(parsed) && parsed > 0) {
+      return (now - parsed) > ONE_WEEK_MS;
+    }
+  }
+  return false;
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -478,12 +520,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
 
     const todaySampleIds = ['bk-today-in', 'bk-today-hamran', 'bk-today-hamran-alma'];
     todaySampleIds.forEach((sid) => {
       const existing = deduplicatedResult.find((b) => b.id === sid);
       if (existing) {
-        if (existing.checkInDate !== todayStr) {
+        if (existing.checkInDate !== todayStr || existing.checkOutDate !== tomorrowStr) {
           existing.checkInDate = todayStr;
           existing.checkOutDate = tomorrowStr;
           migrated = true;
@@ -501,6 +546,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     });
 
+    const existingOut = deduplicatedResult.find((b) => b.id === 'bk-today-out');
+    if (existingOut) {
+      if (existingOut.checkOutDate !== todayStr || existingOut.checkInDate !== yesterdayStr) {
+        existingOut.checkInDate = yesterdayStr;
+        existingOut.checkOutDate = todayStr;
+        migrated = true;
+      }
+    } else {
+      const sampleOut = INITIAL_BOOKINGS.find((b) => b.id === 'bk-today-out');
+      if (sampleOut) {
+        deduplicatedResult.push({
+          ...sampleOut,
+          checkInDate: yesterdayStr,
+          checkOutDate: todayStr,
+        });
+        migrated = true;
+      }
+    }
+
     if (migrated) {
       StorageService.set(STORAGE_KEYS.BOOKINGS, deduplicatedResult);
     }
@@ -515,9 +579,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     StorageService.get<ActivityLog[]>(STORAGE_KEYS.LOGS, INITIAL_LOGS)
   );
 
-  const [notifications, setNotifications] = useState<AppNotification[]>(() =>
-    StorageService.get<AppNotification[]>(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS)
-  );
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+    const saved = StorageService.get<AppNotification[]>(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
+    const now = Date.now();
+    const fresh = (Array.isArray(saved) ? saved : INITIAL_NOTIFICATIONS).filter(
+      (n) => !isNotificationOlderThanOneWeek(n, now)
+    );
+    StorageService.set(STORAGE_KEYS.NOTIFICATIONS, fresh);
+    return fresh;
+  });
 
   const [commissionRequests, setCommissionRequests] = useState<CommissionRequest[]>(() =>
     StorageService.get<CommissionRequest[]>(STORAGE_KEYS.COMMISSION_REQUESTS, [])
@@ -533,6 +603,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false);
   const [activeTemplateTab, setActiveTemplateTab] = useState<keyof MessageTemplates>('depositRequest');
+
+  const [notificationsModalOpen, setNotificationsModalOpen] = useState(false);
+  const openNotificationsModal = useCallback(() => {
+    setNotificationsModalOpen(true);
+  }, []);
 
   const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
     getBrowserNotificationPermission()
@@ -621,6 +696,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     StorageService.set(STORAGE_KEYS.NOTIFICATIONS, notifications);
   }, [notifications]);
+
+  // Auto-delete notifications older than 1 week (7 days)
+  useEffect(() => {
+    const purgeExpiredNotifications = () => {
+      const now = Date.now();
+      setNotifications((prev) => {
+        const remaining = prev.filter((n) => !isNotificationOlderThanOneWeek(n, now));
+        if (remaining.length !== prev.length) {
+          StorageService.set(STORAGE_KEYS.NOTIFICATIONS, remaining);
+          return remaining;
+        }
+        return prev;
+      });
+    };
+
+    purgeExpiredNotifications();
+    const interval = setInterval(purgeExpiredNotifications, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     StorageService.set(STORAGE_KEYS.USER_ACCOUNTS, userAccounts);
@@ -828,12 +922,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const todayArrivals = useMemo(() => {
     const list = bookings.filter(
       (b) =>
-        (b.checkInDate === todayStr ||
-          b.id === 'bk-today-in' ||
-          b.id === 'bk-today-hamran' ||
-          b.id === 'bk-today-hamran-alma' ||
-          b.checkInDate === '2026-10-06') &&
-        b.status !== 'cancelled'
+        b.status !== 'cancelled' &&
+        Boolean(b.checkInDate) &&
+        b.checkInDate.split('T')[0].trim() === todayStr
     );
     const seen = new Set<string>();
     return list.filter((b) => {
@@ -846,8 +937,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const todayDepartures = useMemo(() => {
     const list = bookings.filter(
       (b) =>
-        (b.checkOutDate === todayStr || b.id === 'bk-today-out' || b.checkOutDate === '2026-10-06') &&
-        b.status !== 'cancelled'
+        b.status !== 'cancelled' &&
+        Boolean(b.checkOutDate) &&
+        b.checkOutDate.split('T')[0].trim() === todayStr
     );
     const seen = new Set<string>();
     return list.filter((b) => {
@@ -1009,32 +1101,92 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const triggerBrowserNotification = useCallback(
-    (title: string, body: string, type: ToastData['type'] = 'booking') => {
+    (
+      title: string,
+      body: string,
+      type: ToastData['type'] = 'booking',
+      meta?: {
+        targetAudienceText?: string;
+        targetRole?: 'admin' | 'marketer' | 'guard' | 'all';
+        receiptUrl?: string;
+        receiptName?: string;
+        linkToBookingId?: string;
+        notificationId?: string;
+      }
+    ) => {
+      // Determine targeted role & badge text
+      let targetRole: ToastData['targetRole'] = meta?.targetRole;
+      let targetText = meta?.targetAudienceText;
+
+      if (!targetRole) {
+        if (title.includes('إدارة') || title.includes('الإدارة') || body.includes('للإدارة') || body.includes('الإدارة')) {
+          targetRole = 'admin';
+        } else if (title.includes('حارس') || title.includes('الحارس') || body.includes('للحارس')) {
+          targetRole = 'guard';
+        } else if (title.includes('مسوق') || title.includes('المسوقة') || body.includes('للمسوقة')) {
+          targetRole = 'marketer';
+        } else {
+          targetRole = 'all';
+        }
+      }
+
+      if (!targetText) {
+        if (targetRole === 'admin') {
+          targetText = '👑 تنبيه للإدارة (لم يُفتح)';
+        } else if (targetRole === 'guard') {
+          targetText = `🛡️ تنبيه للحارس (${guard.name || 'أبو راشد'}) (لم يُفتح)`;
+        } else if (targetRole === 'marketer') {
+          targetText = `💼 تنبيه للمسوقة (${currentMarketer?.name || 'المسوقة'}) (لم يُفتح)`;
+        } else {
+          targetText = '👥 تنبيه لفريق العمل والمسوقين (لم يُفتح)';
+        }
+      }
+
       setActiveToast({
         id: `toast-${Date.now()}-${Math.random()}`,
         title,
         body,
         type,
+        targetRole,
+        targetAudienceText: targetText,
+        receiptUrl: meta?.receiptUrl,
+        receiptName: meta?.receiptName,
+        linkToBookingId: meta?.linkToBookingId,
+        notificationId: meta?.notificationId,
       });
+
       if (isSoundEnabled) {
         playChimeSound(true);
       }
-      triggerSystemNotification(title, {
+
+      const externalHeader = `[${targetText.replace(/\(لم يُفتح\)/g, '').trim()}] ${title}`;
+      triggerSystemNotification(externalHeader, {
         body,
         playSound: false,
-        tag: `amasa-booking-${Date.now()}`,
+        tag: `amasa-card-${Date.now()}`,
       });
     },
-    [isSoundEnabled]
+    [isSoundEnabled, guard.name, currentMarketer?.name]
   );
 
   const sendTestNotification = useCallback(() => {
+    const role = isAdmin ? 'admin' : isGuard ? 'guard' : 'marketer';
+    const roleText = isAdmin
+      ? '👑 تنبيه خاص بالإدارة (لم يُفتح)'
+      : isGuard
+      ? `🛡️ تنبيه خاص بحارس العقار (${guard.name}) (لم يُفتح)`
+      : `💼 تنبيه خاص بالمسوقة (${currentMarketer?.name}) (لم يُفتح)`;
+
     triggerBrowserNotification(
-      '🔔 تجربة نظام تنبيهات المتصفح (Web Notification)',
-      'هذا تنبيه تجريبي لتأكيد وصول إشعارات الحجوزات ودفع العربون فوراً للموظفين مع نغمة التنبيه الموسيقية!',
-      'deposit_confirmed'
+      '🔔 تجربة نظام بطاقات التنبيهات الخارجية',
+      'هذا تنبيه تجريبي ببطاقة خارجية ملونة لمعرفة أن هناك إشعاراً جديداً لم يُفتح بعد للطرف المعني مع نغمة موسيقية!',
+      'deposit_confirmed',
+      {
+        targetRole: role,
+        targetAudienceText: roleText,
+      }
     );
-  }, [triggerBrowserNotification]);
+  }, [triggerBrowserNotification, isAdmin, isGuard, guard.name, currentMarketer?.name]);
 
   const switchUser = useCallback(
     (role: UserRole, marketerId?: string) => {
@@ -3160,21 +3312,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setNotifications((prev) => [
         {
           id: `notif-ins-digital-${Date.now()}`,
-          title: `🛡️ تم توثيق إيصال التأمين بنكياً - ${bk.propertyName}`,
-          description: `قامت المسوقة (${actor}) برفع وتوثيق إيصال تحويل التأمين البنكي (${bk.insuranceAmount} ريال) للعميل (${bk.customerName}). لا حاجة لمطالبة العميل بالتأمين كاش من قبل الحارس.`,
+          title: isAdmin
+            ? `🛡️ إشعار للمسوقة: تم توثيق إيصال التأمين بنكياً - ${bk.propertyName}`
+            : `🛡️ إشعار للإدارة: تم توثيق إيصال التأمين بنكياً - ${bk.propertyName}`,
+          description: `قام (${actor}) برفع وتوثيق إيصال تحويل التأمين البنكي (${bk.insuranceAmount} ريال) للعميل (${bk.customerName}) لحجز #${bk.bookingNumber}. يمكن فتح ومعاينة وحفظ الإيصال فوراً.`,
           timestamp: 'الآن',
           read: false,
           type: 'insurance',
-          targetAudience: 'all',
+          targetAudience: isAdmin && bk.marketerId ? 'marketer' : 'all',
+          targetMarketerId: bk.marketerId,
           propertyId: bk.propertyId,
           linkToBookingId: bk.id,
+          receiptUrl: receiptDataUrl,
+          receiptName: receiptName,
+          receiptType: 'insurance',
         },
         ...prev,
       ]);
 
       triggerBrowserNotification(
-        `🛡️ اعتماد إيصال التأمين البنكي - ${bk.propertyName}`,
-        `تم توثيق إيصال تحويل التأمين (${bk.insuranceAmount} ر.س) للعميل (${bk.customerName}) بنجاح`
+        isAdmin
+          ? `🛡️ إشعار للمسوقة: تم توثيق إيصال التأمين - ${bk.propertyName}`
+          : `🛡️ إشعار للإدارة: تم توثيق إيصال التأمين - ${bk.propertyName}`,
+        `تم توثيق إيصال تحويل التأمين (${bk.insuranceAmount} ر.س) بواسطة (${actor}) - متاح للمعاينة والحفظ فوراً`,
+        'insurance',
+        {
+          targetRole: isAdmin ? 'marketer' : 'admin',
+          targetAudienceText: isAdmin
+            ? `💼 تنبيه خاص بالمسوقة (${bk.marketerName || 'المسوقة'}) (لم يُفتح)`
+            : '👑 تنبيه خاص بالإدارة (لم يُفتح)',
+          receiptUrl: receiptDataUrl,
+          receiptName: receiptName,
+          linkToBookingId: bk.id,
+        }
       );
       playChimeSound();
 
@@ -3182,7 +3352,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         actor,
         userRole,
         'رفع واعتماد إيصال تحويل التأمين البنكي',
-        `قامت المسوقة ${actor} برفع وتوثيق إيصال تحويل التأمين (${bk.insuranceAmount} ريال) للعميل ${bk.customerName}.`
+        `قام ${actor} برفع وتوثيق إيصال تحويل التأمين (${bk.insuranceAmount} ريال) للعميل ${bk.customerName}.`
       );
     },
     [bookings, isAdmin, currentMarketer?.name, userRole, logActivity, triggerBrowserNotification]
@@ -3224,21 +3394,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setNotifications((prev) => [
         {
           id: `notif-rem-receipt-${Date.now()}`,
-          title: `💳 إيصال سداد متبقي بنكي - ${bk.propertyName}`,
-          description: `قامت المسوقة (${actor}) برفع إيصال سداد المبلغ المتبقي (${remainingPrev} ر.س) للعميل (${bk.customerName}) بحجز #${bk.bookingNumber}. تم إرسال الإيصال فوراً لمراجعة وحفظ وتدقيق الإدارة.`,
+          title: isAdmin
+            ? `💳 إشعار للمسوقة: توثيق إيصال سداد المتبقي - ${bk.propertyName}`
+            : `💳 إشعار للإدارة: إيصال سداد متبقي بنكي - ${bk.propertyName}`,
+          description: `قام (${actor}) برفع إيصال سداد المبلغ المتبقي (${remainingPrev} ر.س) للعميل (${bk.customerName}) بحجز #${bk.bookingNumber}. تم إرسال الإيصال فوراً للطرف الآخر مع إمكانية الفتح والمعاينة والتحميل.`,
           timestamp: 'الآن',
           read: false,
           type: 'booking',
-          targetAudience: 'admin_only',
+          targetAudience: isAdmin && bk.marketerId ? 'marketer' : 'admin_only',
+          targetMarketerId: bk.marketerId,
           propertyId: bk.propertyId,
           linkToBookingId: bk.id,
+          receiptUrl: receiptDataUrl,
+          receiptName: receiptName,
+          receiptType: 'remaining',
         },
         ...prev,
       ]);
 
       triggerBrowserNotification(
-        `💳 إيصال سداد متبقي - ${bk.propertyName}`,
-        `تم رفع إيصال سداد المتبقي (${remainingPrev} ر.س) للعميل (${bk.customerName}) وإرساله للإدارة بنجاح`
+        isAdmin
+          ? `💳 إشعار للمسوقة: توثيق إيصال سداد المتبقي - ${bk.propertyName}`
+          : `💳 إشعار للإدارة: إيصال سداد متبقي بنكي - ${bk.propertyName}`,
+        `قام (${actor}) برفع إيصال سداد المتبقي (${remainingPrev} ر.س) للعميل (${bk.customerName}). متاح للمعاينة والتحميل فوراً.`,
+        'booking',
+        {
+          targetRole: isAdmin ? 'marketer' : 'admin',
+          targetAudienceText: isAdmin
+            ? `💼 تنبيه خاص بالمسوقة (${bk.marketerName || 'المسوقة'}) (لم يُفتح)`
+            : '👑 تنبيه خاص بالإدارة (لم يُفتح)',
+          receiptUrl: receiptDataUrl,
+          receiptName: receiptName,
+          linkToBookingId: bk.id,
+        }
       );
       playChimeSound();
 
@@ -3246,7 +3434,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         actor,
         userRole,
         'رفع إيصال سداد المبلغ المتبقي',
-        `قامت المسوقة ${actor} برفع صورة إيصال سداد المتبقي (${remainingPrev} ريال) للعميل ${bk.customerName} بحجز ${bk.bookingNumber} وتم إرساله للإدارة.`
+        `قام ${actor} برفع صورة إيصال سداد المتبقي (${remainingPrev} ريال) للعميل ${bk.customerName} بحجز ${bk.bookingNumber} وتم إرساله للطرف الآخر.`
       );
     },
     [bookings, isAdmin, currentMarketer?.name, userRole, logActivity, triggerBrowserNotification]
@@ -3436,17 +3624,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setNotifications((prev) => [
         {
           id: `notif-ins-bank-${Date.now()}`,
-          title: `🏦 طلب استرداد تأمين (تحويل بنكي) - ${bk.propertyName}`,
-          description: `تم رفع صورة حساب/آيبان العميل ${bk.customerName} لاسترداد التأمين بقيمة (${refundAmount} ر.س) لحجز #${bk.bookingNumber}. يرجى التحويل والمراجعة.${params.customerIban ? ` الآيبان: ${params.customerIban}` : ''}`,
+          title: `🏦 تنبيه للإدارة: طلب استرداد تأمين مع صورة الحساب - ${bk.propertyName}`,
+          description: `تم رفع صورة حساب/آيبان العميل ${bk.customerName} لاسترداد التأمين بقيمة (${refundAmount} ر.س) لحجز #${bk.bookingNumber}. متاح للمعاينة والحفظ والتحميل.${params.customerIban ? ` الآيبان: ${params.customerIban}` : ''}`,
           timestamp: 'الآن',
           read: false,
           type: 'insurance' as const,
           targetAudience: 'admin_only' as const,
           propertyId: bk.propertyId,
           linkToBookingId: bk.id,
+          receiptUrl: params.bankReceiptDataUrl,
+          receiptName: params.bankReceiptName,
+          receiptType: 'customer_account',
         },
+        ...(bk.marketerId
+          ? [
+              {
+                id: `notif-ins-bank-marketer-${Date.now()}`,
+                title: `🏦 توثيق طلب استرداد التأمين - ${bk.propertyName}`,
+                description: `تم حفظ صورة حساب العميل ${bk.customerName} وإرسالها للإدارة لتحويل التأمين (${refundAmount} ر.س) لحجز #${bk.bookingNumber}.`,
+                timestamp: 'الآن',
+                read: false,
+                type: 'insurance' as const,
+                targetAudience: 'marketer' as const,
+                targetMarketerId: bk.marketerId,
+                propertyId: bk.propertyId,
+                linkToBookingId: bk.id,
+                receiptUrl: params.bankReceiptDataUrl,
+                receiptName: params.bankReceiptName,
+                receiptType: 'customer_account',
+              },
+            ]
+          : []),
         ...prev,
       ]);
+
+      triggerBrowserNotification(
+        `🏦 طلب استرداد تأمين - ${bk.propertyName}`,
+        `تم رفع صورة الحساب/الآيبان للعميل (${bk.customerName}) بمبلغ (${refundAmount} ر.س) - متاح للمعاينة والحفظ`
+      );
+      playChimeSound();
 
       logActivity(
         isAdmin ? 'الإدارة' : currentMarketer?.name || 'المسوقة',
@@ -3455,7 +3671,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         `تم رفع صورة حساب العميل ${bk.customerName} لاسترداد التأمين (${refundAmount} ر.س) لحجز #${bk.bookingNumber} وإشعار الإدارة.`
       );
     },
-    [bookings, logActivity, isAdmin, currentMarketer?.name, userRole]
+    [bookings, logActivity, isAdmin, currentMarketer?.name, userRole, triggerBrowserNotification]
   );
 
   const requestInsuranceRefundViaGuardCash = useCallback(
@@ -3554,8 +3770,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ? [
               {
                 id: `notif-marketer-finish-${Date.now()}`,
-                title: `🎉 تم إنهاء الحجز وتوثيق استرداد التأمين - ${bk.propertyName}`,
-                description: `تم إنهاء الحجز رقم #${bk.bookingNumber} للعميل ${bk.customerName} وتوثيق استرداد التأمين (${refundAmount} ر.س)${params.receiptName ? ' مع حفظ صورة الإيصال بنجاح.' : ' كاش عبر الحارس.'}`,
+                title: `🎉 إشعار للمسوقة: تم إنهاء الحجز وتوثيق التأمين - ${bk.propertyName}`,
+                description: `تم إنهاء الحجز رقم #${bk.bookingNumber} للعميل ${bk.customerName} وتوثيق استرداد التأمين (${refundAmount} ر.س)${params.receiptName ? ' مع حفظ صورة الإيصال وإمكانية معاينتها وتحميلها.' : ' كاش عبر الحارس.'}`,
                 timestamp: 'الآن',
                 read: false,
                 type: 'insurance' as const,
@@ -3563,22 +3779,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 targetMarketerId: bk.marketerId,
                 propertyId: bk.propertyId,
                 linkToBookingId: bk.id,
+                receiptUrl: params.receiptDataUrl,
+                receiptName: params.receiptName,
+                receiptType: 'refund',
               },
             ]
           : []),
         {
           id: `notif-admin-finish-${Date.now()}`,
-          title: `✅ تم إغلاق وإنهاء الحجز - ${bk.propertyName}`,
-          description: `تم إغلاق الحجز #${bk.bookingNumber} للعميل ${bk.customerName} بنجاح بعد استرداد التأمين وإتمام كافة إجراءات الخروج.`,
+          title: `✅ إشعار للإدارة: تم إنهاء الحجز وتوثيق التأمين - ${bk.propertyName}`,
+          description: `تم إغلاق الحجز #${bk.bookingNumber} للعميل ${bk.customerName} بنجاح بعد استرداد التأمين (${refundAmount} ر.س)${params.receiptName ? ' مع إرفاق صورة الإيصال للمعاينة والحفظ.' : '.'}`,
           timestamp: 'الآن',
           read: false,
           type: 'checkout' as const,
           targetAudience: 'admin_only' as const,
           propertyId: bk.propertyId,
           linkToBookingId: bk.id,
+          receiptUrl: params.receiptDataUrl,
+          receiptName: params.receiptName,
+          receiptType: 'refund',
         },
         ...prev,
       ]);
+
+      triggerBrowserNotification(
+        `✅ إنهاء الحجز وتوثيق التأمين - ${bk.propertyName}`,
+        `تم إنهاء الحجز #${bk.bookingNumber} وتوثيق استرداد التأمين (${refundAmount} ر.س) - الإيصال متاح للمعاينة والحفظ فوراً`,
+        'checkout',
+        {
+          targetRole: isAdmin ? (bk.marketerId ? 'marketer' : 'all') : 'admin',
+          targetAudienceText: isAdmin && bk.marketerId
+            ? `💼 تنبيه خاص بالمسوقة (${bk.marketerName || 'المسوقة'}) (لم يُفتح)`
+            : '👑 تنبيه خاص بالإدارة (لم يُفتح)',
+          receiptUrl: params.receiptDataUrl,
+          receiptName: params.receiptName,
+          linkToBookingId: bk.id,
+        }
+      );
+      playChimeSound();
 
       logActivity(
         isAdmin ? 'الإدارة' : currentMarketer?.name || 'المسوقة',
@@ -3587,7 +3825,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         `تم إنهاء الحجز رقم #${bk.bookingNumber} للعميل ${bk.customerName} وإغلاق دورة التأمين بنجاح.`
       );
     },
-    [bookings, logActivity, isAdmin, currentMarketer?.name, userRole]
+    [bookings, logActivity, isAdmin, currentMarketer?.name, userRole, triggerBrowserNotification]
   );
 
   const completeBookingPayment = useCallback(
@@ -3618,16 +3856,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setNotifications((prev) => [
         {
           id: `notif-payment-${Date.now()}`,
-          title: `✅ تم إكمال الدفع - ${bk.propertyName}`,
-          description: `أكمل العميل ${bk.customerName} سداد المبلغ المتبقي (${bk.remainingAmount} ريال) لحجز ${bk.bookingNumber} بإيصال بنكي مرفق (${receiptName}) - سجّله ${actor}.`,
+          title: isAdmin
+            ? `✅ إشعار للمسوقة: تم إكمال الدفع بالإيصال - ${bk.propertyName}`
+            : `✅ إشعار للإدارة: تم إكمال الدفع بالإيصال - ${bk.propertyName}`,
+          description: `أكمل العميل ${bk.customerName} سداد المبلغ المتبقي (${bk.remainingAmount} ريال) لحجز ${bk.bookingNumber} بإيصال بنكي مرفق (${receiptName}) - سجّله ${actor}. متاح للمعاينة والتحميل بضغطة زر.`,
           timestamp: 'الآن',
           read: false,
           type: 'booking',
-          targetAudience: 'admin_only',
+          targetAudience: isAdmin && bk.marketerId ? 'marketer' : 'admin_only',
+          targetMarketerId: bk.marketerId,
           linkToBookingId: bk.id,
+          receiptUrl: receiptDataUrl,
+          receiptName: receiptName,
+          receiptType: 'remaining',
         },
         ...prev,
       ]);
+
+      triggerBrowserNotification(
+        `✅ إكمال الدفع بالإيصال - ${bk.propertyName}`,
+        `تم تسجيل إيصال سداد المتبقي (${bk.remainingAmount} ر.س) للعميل (${bk.customerName}) - متاح للمعاينة والتحميل`
+      );
+      playChimeSound();
 
       logActivity(
         actor,
@@ -3636,7 +3886,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         `تم إكمال دفع حجز ${bk.bookingNumber} للعميل ${bk.customerName} وإرفاق الإيصال: ${receiptName}.`
       );
     },
-    [bookings, isAdmin, isGuard, guard.name, currentMarketer?.name, userRole, logActivity]
+    [bookings, isAdmin, isGuard, guard.name, currentMarketer?.name, userRole, logActivity, triggerBrowserNotification]
   );
 
   const recordCustomerArrival = useCallback(
@@ -3773,6 +4023,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const markNotificationsAsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  }, []);
+
+  const markSingleNotificationAsRead = useCallback((notificationId: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
+    );
   }, []);
 
   const getEligibleCommissionBookings = useCallback(
@@ -4263,6 +4519,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         filteredNotifications,
         unreadNotificationsCount,
         markNotificationsAsRead,
+        markSingleNotificationAsRead,
+        notificationsModalOpen,
+        setNotificationsModalOpen,
+        openNotificationsModal,
 
         commissionRequests,
         getEligibleCommissionBookings,

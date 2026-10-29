@@ -285,6 +285,17 @@ export interface Booking {
   insuranceRefundNotifiedToAdmin?: boolean;
   insuranceRefundNotifiedToGuard?: boolean;
   insuranceRefundNotifiedToMarketer?: boolean;
+  paymentNotes?: string;
+  digitalInsurancePaymentMethod?: 'receipt' | 'cash';
+  digitalInsuranceNotes?: string;
+  insuranceRefundRequestedBy?: string;
+  insuranceRefundRequestedAt?: string;
+  insuranceRefundNotes?: string;
+  insuranceRefundProcessedBy?: string;
+  insuranceRefundProcessedAt?: string;
+  guardCheckoutStaff?: string;
+  guardDamageNotes?: string;
+  guardDamagePhotos?: { name: string; dataUrl: string }[];
 }
 
 export interface DateOverride {
@@ -369,6 +380,7 @@ export interface AppNotification {
   timestamp: string;
   read: boolean;
   type: 'booking' | 'deposit_request' | 'deposit_confirmed' | 'deposit_expired' | 'commission' | 'permission' | 'checkout' | 'insurance' | 'system' | 'broadcast';
+  createdAt?: number | string;
   targetAudience?: 'all' | 'admin_only' | 'admin_and_guard' | 'marketer' | 'marketers' | 'guards' | 'all_staff';
   targetMarketerId?: string;
   targetMarketerIds?: string[];
@@ -383,6 +395,9 @@ export interface AppNotification {
   effectiveDate?: string;
   requiresAcknowledgment?: boolean;
   acknowledgedBy?: string[];
+  receiptUrl?: string;
+  receiptName?: string;
+  receiptType?: string;
 }
 
 export interface MessageTemplates {
@@ -399,7 +414,13 @@ export interface ToastData {
   id: string;
   title: string;
   body: string;
-  type: 'booking' | 'deposit_confirmed' | 'deposit_request' | 'commission' | 'permission' | 'checkout' | 'insurance' | 'system';
+  type: 'booking' | 'deposit_confirmed' | 'deposit_request' | 'commission' | 'permission' | 'checkout' | 'insurance' | 'system' | 'broadcast';
+  targetAudienceText?: string;
+  targetRole?: 'admin' | 'marketer' | 'guard' | 'all';
+  receiptUrl?: string;
+  receiptName?: string;
+  linkToBookingId?: string;
+  notificationId?: string;
 }
 
 export interface CoordinatorServiceItem {

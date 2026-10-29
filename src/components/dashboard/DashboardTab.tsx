@@ -37,6 +37,9 @@ import {
   Home,
   Copy,
   Settings,
+  Download,
+  ExternalLink,
+  FileDown,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Booking } from '../../types';
@@ -44,6 +47,20 @@ import { Booking } from '../../types';
 interface GuardActionModalData {
   kind: 'arrive' | 'insrecv' | 'exit' | 'insret';
   booking: Booking;
+}
+
+interface ActiveReceiptViewerData {
+  title: string;
+  receiptType: 'remaining' | 'insurance' | 'deposit' | 'refund' | 'customer_account' | 'damage';
+  receiptTypeName: string;
+  receiptUrl?: string;
+  receiptName?: string;
+  booking?: Booking;
+  uploadedBy?: string;
+  uploadedAt?: string;
+  notes?: string;
+  amount?: number;
+  customerIban?: string;
 }
 
 export const DashboardTab: React.FC = () => {
@@ -178,6 +195,266 @@ export const DashboardTab: React.FC = () => {
 
   // Receipt view modal
   const [viewReceiptBooking, setViewReceiptBooking] = useState<Booking | null>(null);
+  const [activeReceiptViewer, setActiveReceiptViewer] = useState<ActiveReceiptViewerData | null>(null);
+
+  const handleDownloadReceipt = (dataUrl?: string, filename?: string) => {
+    if (!dataUrl) {
+      showToast('عذراً، ملف الإيصال غير متاح للتحميل');
+      return;
+    }
+    try {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename || `receipt-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast('تم حفظ وتحميل صورة الإيصال بنجاح ✓');
+    } catch {
+      window.open(dataUrl, '_blank');
+    }
+  };
+
+  const openReceiptModal = (
+    type: 'remaining' | 'insurance' | 'deposit' | 'refund' | 'customer_account' | 'damage',
+    bk: Booking,
+    damagePhoto?: { name: string; dataUrl: string }
+  ) => {
+    if (type === 'remaining') {
+      setActiveReceiptViewer({
+        title: `إيصال سداد المبلغ المتبقي - حجز #${bk.bookingNumber}`,
+        receiptType: 'remaining',
+        receiptTypeName: 'إيصال سداد المتبقي (تحويل بنكي)',
+        receiptUrl: bk.paymentReceiptDataUrl,
+        receiptName: bk.paymentReceiptName || `payment-${bk.bookingNumber}.png`,
+        booking: bk,
+        uploadedBy: bk.paymentCompletedBy || bk.marketerName || 'المسوقة',
+        uploadedAt: bk.paymentCompletedAt,
+        notes: bk.paymentNotes,
+        amount: bk.totalPrice - bk.depositPaid,
+      });
+    } else if (type === 'insurance') {
+      setActiveReceiptViewer({
+        title: `إيصال التأمين - حجز #${bk.bookingNumber}`,
+        receiptType: 'insurance',
+        receiptTypeName: bk.digitalInsurancePaymentMethod === 'cash' || bk.insurancePaymentMethod === 'cash' ? 'توثيق تأمين كاش' : 'إيصال تحويل التأمين البنكي',
+        receiptUrl: bk.digitalInsuranceReceiptUrl || bk.insuranceReceiptDataUrl,
+        receiptName: bk.digitalInsuranceReceiptName || bk.insuranceReceiptName || `insurance-${bk.bookingNumber}.png`,
+        booking: bk,
+        uploadedBy: bk.insuranceUploadedBy || bk.marketerName || 'المسوقة',
+        uploadedAt: bk.insuranceUploadedAt,
+        notes: bk.digitalInsuranceNotes,
+        amount: bk.insuranceAmount,
+      });
+    } else if (type === 'customer_account') {
+      setActiveReceiptViewer({
+        title: `صورة الحساب البنكي لاسترداد التأمين - حجز #${bk.bookingNumber}`,
+        receiptType: 'customer_account',
+        receiptTypeName: 'صورة الحساب البنكي / الآيبان للنزيل',
+        receiptUrl: bk.customerBankReceiptUrl,
+        receiptName: bk.customerBankReceiptName || `bank-account-${bk.bookingNumber}.png`,
+        booking: bk,
+        uploadedBy: bk.insuranceRefundRequestedBy || bk.marketerName || 'المسوقة',
+        uploadedAt: bk.insuranceRefundRequestedAt,
+        notes: bk.insuranceRefundNotes,
+        amount: bk.insuranceAmount,
+        customerIban: bk.customerIban,
+      });
+    } else if (type === 'refund') {
+      setActiveReceiptViewer({
+        title: `إيصال استرداد التأمين للنزيل - حجز #${bk.bookingNumber}`,
+        receiptType: 'refund',
+        receiptTypeName: 'إيصال تحويل استرداد التأمين البنكي',
+        receiptUrl: bk.insuranceRefundReceiptUrl,
+        receiptName: bk.insuranceRefundReceiptName || `refund-${bk.bookingNumber}.png`,
+        booking: bk,
+        uploadedBy: bk.insuranceRefundProcessedBy || 'الإدارة',
+        uploadedAt: bk.insuranceRefundProcessedAt,
+        notes: bk.insuranceRefundNotes,
+        amount: bk.insuranceAmount,
+      });
+    } else if (type === 'deposit') {
+      setActiveReceiptViewer({
+        title: `إيصال العربون المبدئي - حجز #${bk.bookingNumber}`,
+        receiptType: 'deposit',
+        receiptTypeName: 'إيصال تحويل العربون',
+        receiptUrl: bk.depositReceiptUrl,
+        receiptName: `deposit-${bk.bookingNumber}.png`,
+        booking: bk,
+        uploadedBy: bk.marketerName || 'المسوقة',
+        uploadedAt: bk.createdAt,
+        amount: bk.depositPaid,
+      });
+    } else if (type === 'damage' && damagePhoto) {
+      setActiveReceiptViewer({
+        title: `صورة معاينة / أضرار الحارس - حجز #${bk.bookingNumber}`,
+        receiptType: 'damage',
+        receiptTypeName: 'صورة معاينة العبث والأضرار',
+        receiptUrl: damagePhoto.dataUrl,
+        receiptName: damagePhoto.name || `damage-${bk.bookingNumber}.png`,
+        booking: bk,
+        uploadedBy: bk.guardCheckoutStaff || 'الحارس',
+        uploadedAt: bk.checkedOutAt,
+        notes: bk.guardDamageNotes,
+      });
+    }
+  };
+
+  const renderBookingReceiptBadges = (bk: Booking) => {
+    const hasRemaining = Boolean(bk.paymentReceiptDataUrl || bk.paymentReceiptName);
+    const hasInsurance = Boolean(bk.digitalInsuranceReceiptUrl || bk.insuranceReceiptDataUrl || bk.insuranceReceiptName);
+    const hasCustomerBank = Boolean(bk.customerBankReceiptUrl || bk.customerBankReceiptName);
+    const hasRefund = Boolean(bk.insuranceRefundReceiptUrl || bk.insuranceRefundReceiptName);
+    const hasDeposit = Boolean(bk.depositReceiptUrl);
+    const photosList = bk.damagePhotos || bk.guardDamagePhotos || [];
+    const hasDamagePhotos = photosList.length > 0;
+
+    const hasAny = hasRemaining || hasInsurance || hasCustomerBank || hasRefund || hasDeposit || hasDamagePhotos;
+    if (!hasAny) return null;
+
+    return (
+      <div className="bg-gradient-to-r from-purple-50/80 via-sky-50/70 to-emerald-50/80 border border-purple-200/90 rounded-xl p-2 sm:px-3 flex items-center justify-between gap-2 flex-wrap text-xs font-['Tajawal',sans-serif] shadow-2xs">
+        <div className="flex items-center gap-1.5 text-purple-950 font-bold">
+          <Paperclip className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+          <span className="text-[11px] sm:text-xs">المستندات والإيصالات المرفقة:</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {hasRemaining && (
+            <div className="inline-flex items-center rounded-lg overflow-hidden border border-emerald-300 bg-white shadow-2xs">
+              <button
+                type="button"
+                onClick={() => openReceiptModal('remaining', bk)}
+                className="px-2 py-1 text-emerald-800 hover:bg-emerald-50 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                title="معاينة إيصال سداد المتبقي"
+              >
+                <Eye className="w-3 h-3 text-emerald-600" />
+                <span>إيصال المتبقي</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadReceipt(bk.paymentReceiptDataUrl, bk.paymentReceiptName || `payment-${bk.bookingNumber}.png`)}
+                className="px-1.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer border-r border-emerald-400 transition-colors"
+                title="تحميل / حفظ صورة إيصال المتبقي بضغطة زر"
+              >
+                <Download className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {hasInsurance && (
+            <div className="inline-flex items-center rounded-lg overflow-hidden border border-sky-300 bg-white shadow-2xs">
+              <button
+                type="button"
+                onClick={() => openReceiptModal('insurance', bk)}
+                className="px-2 py-1 text-sky-800 hover:bg-sky-50 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                title="معاينة إيصال تحويل التأمين"
+              >
+                <Eye className="w-3 h-3 text-sky-600" />
+                <span>إيصال التأمين</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadReceipt(bk.digitalInsuranceReceiptUrl || bk.insuranceReceiptDataUrl, bk.digitalInsuranceReceiptName || bk.insuranceReceiptName || `insurance-${bk.bookingNumber}.png`)}
+                className="px-1.5 py-1 bg-sky-600 hover:bg-sky-700 text-white cursor-pointer border-r border-sky-400 transition-colors"
+                title="تحميل / حفظ صورة إيصال التأمين بضغطة زر"
+              >
+                <Download className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {hasCustomerBank && (
+            <div className="inline-flex items-center rounded-lg overflow-hidden border border-purple-300 bg-white shadow-2xs">
+              <button
+                type="button"
+                onClick={() => openReceiptModal('customer_account', bk)}
+                className="px-2 py-1 text-purple-900 hover:bg-purple-50 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                title="معاينة صورة حساب/آيبان العميل لاسترداد التأمين"
+              >
+                <Eye className="w-3 h-3 text-purple-700" />
+                <span>حساب العميل (استرداد)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadReceipt(bk.customerBankReceiptUrl, bk.customerBankReceiptName || `iban-${bk.bookingNumber}.png`)}
+                className="px-1.5 py-1 bg-purple-700 hover:bg-purple-800 text-white cursor-pointer border-r border-purple-500 transition-colors"
+                title="تحميل / حفظ صورة حساب النزيل بضغطة زر"
+              >
+                <Download className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {hasRefund && (
+            <div className="inline-flex items-center rounded-lg overflow-hidden border border-teal-300 bg-white shadow-2xs">
+              <button
+                type="button"
+                onClick={() => openReceiptModal('refund', bk)}
+                className="px-2 py-1 text-teal-800 hover:bg-teal-50 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                title="معاينة إيصال استرداد التأمين للعميل"
+              >
+                <Eye className="w-3 h-3 text-teal-600" />
+                <span>إيصال الاسترداد</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadReceipt(bk.insuranceRefundReceiptUrl, bk.insuranceRefundReceiptName || `refund-${bk.bookingNumber}.png`)}
+                className="px-1.5 py-1 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer border-r border-teal-400 transition-colors"
+                title="تحميل / حفظ صورة إيصال الاسترداد بضغطة زر"
+              >
+                <Download className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {hasDeposit && (
+            <div className="inline-flex items-center rounded-lg overflow-hidden border border-amber-300 bg-white shadow-2xs">
+              <button
+                type="button"
+                onClick={() => openReceiptModal('deposit', bk)}
+                className="px-2 py-1 text-amber-900 hover:bg-amber-50 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                title="معاينة إيصال العربون"
+              >
+                <Eye className="w-3 h-3 text-amber-600" />
+                <span>إيصال العربون</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadReceipt(bk.depositReceiptUrl, `deposit-${bk.bookingNumber}.png`)}
+                className="px-1.5 py-1 bg-amber-600 hover:bg-amber-700 text-white cursor-pointer border-r border-amber-400 transition-colors"
+                title="تحميل / حفظ صورة العربون بضغطة زر"
+              >
+                <Download className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {hasDamagePhotos && photosList.map((photo: { name: string; dataUrl: string }, pIdx: number) => (
+            <div key={pIdx} className="inline-flex items-center rounded-lg overflow-hidden border border-rose-300 bg-white shadow-2xs">
+              <button
+                type="button"
+                onClick={() => openReceiptModal('damage', bk, photo)}
+                className="px-2 py-1 text-rose-800 hover:bg-rose-50 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                title={`معاينة صورة معاينة الحارس #${pIdx + 1}`}
+              >
+                <Camera className="w-3 h-3 text-rose-600" />
+                <span>صورة أضرار #{pIdx + 1}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadReceipt(photo.dataUrl, photo.name || `damage-${bk.bookingNumber}-${pIdx + 1}.png`)}
+                className="px-1.5 py-1 bg-rose-600 hover:bg-rose-700 text-white cursor-pointer border-r border-rose-400 transition-colors"
+                title="تحميل / حفظ صورة المعاينة بضغطة زر"
+              >
+                <Download className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   // Guard Departure & Insurance Inspection Modal State (مغادرة اليوم: إعادة التأمين أو خصم مبلغ مع خانة إرفاق صور العبث والأضرار)
   const [guardInspectionBooking, setGuardInspectionBooking] = useState<Booking | null>(null);
@@ -235,29 +512,35 @@ export const DashboardTab: React.FC = () => {
 
   // Marketer sees today's arrivals for their bookings only, Admin & Guard see all
   const visibleArrivals = useMemo(() => {
-    if (isAdmin) return todayArrivals;
+    const strictlyArrivalsToday = todayArrivals.filter(
+      (b) => b.status !== 'cancelled' && (b.checkInDate ? b.checkInDate.split('T')[0].trim() : '') === todayStr
+    );
+    if (isAdmin) return strictlyArrivalsToday;
     if (isGuard) {
-      if (!guard.assignedPropertyId) return todayArrivals;
-      return todayArrivals.filter((b) => b.propertyId === guard.assignedPropertyId);
+      if (!guard.assignedPropertyId) return strictlyArrivalsToday;
+      return strictlyArrivalsToday.filter((b) => b.propertyId === guard.assignedPropertyId);
     }
     // Marketer: strictly show only their own bookings
-    return todayArrivals.filter(
+    return strictlyArrivalsToday.filter(
       (b) => b.marketerId === currentMarketerId || (currentMarketer && b.marketerName === currentMarketer.name)
     );
-  }, [todayArrivals, isAdmin, isGuard, guard.assignedPropertyId, currentMarketerId, currentMarketer]);
+  }, [todayArrivals, todayStr, isAdmin, isGuard, guard.assignedPropertyId, currentMarketerId, currentMarketer]);
 
   // Marketer sees today's departures for their bookings only, Admin & Guard see all
   const visibleDepartures = useMemo(() => {
-    if (isAdmin) return todayDepartures;
+    const strictlyDeparturesToday = todayDepartures.filter(
+      (b) => b.status !== 'cancelled' && (b.checkOutDate ? b.checkOutDate.split('T')[0].trim() : '') === todayStr
+    );
+    if (isAdmin) return strictlyDeparturesToday;
     if (isGuard) {
-      if (!guard.assignedPropertyId) return todayDepartures;
-      return todayDepartures.filter((b) => b.propertyId === guard.assignedPropertyId);
+      if (!guard.assignedPropertyId) return strictlyDeparturesToday;
+      return strictlyDeparturesToday.filter((b) => b.propertyId === guard.assignedPropertyId);
     }
     // Marketer: strictly show only their own bookings
-    return todayDepartures.filter(
+    return strictlyDeparturesToday.filter(
       (b) => b.marketerId === currentMarketerId || (currentMarketer && b.marketerName === currentMarketer.name)
     );
-  }, [todayDepartures, isAdmin, isGuard, guard.assignedPropertyId, currentMarketerId, currentMarketer]);
+  }, [todayDepartures, todayStr, isAdmin, isGuard, guard.assignedPropertyId, currentMarketerId, currentMarketer]);
 
   // All bookings filtered strictly according to user role:
   // Admin sees all, Guard sees assigned property, Marketer sees only their own
@@ -277,13 +560,17 @@ export const DashboardTab: React.FC = () => {
   const trackingBookings = useMemo(() => {
     let list = roleFilteredBookings.filter((b) => b.status !== 'cancelled');
     if (trackingSubFilter === 'todayDepartures') {
-      list = list.filter((b) => b.checkOutDate === todayStr);
+      list = list.filter((b) => (b.checkOutDate ? b.checkOutDate.split('T')[0].trim() : '') === todayStr);
     }
     return [...list].sort((a, b) => {
-      const aIsToday = a.checkInDate === todayStr || a.checkOutDate === todayStr ? 1 : 0;
-      const bIsToday = b.checkInDate === todayStr || b.checkOutDate === todayStr ? 1 : 0;
+      const aCheckIn = a.checkInDate ? a.checkInDate.split('T')[0].trim() : '';
+      const aCheckOut = a.checkOutDate ? a.checkOutDate.split('T')[0].trim() : '';
+      const bCheckIn = b.checkInDate ? b.checkInDate.split('T')[0].trim() : '';
+      const bCheckOut = b.checkOutDate ? b.checkOutDate.split('T')[0].trim() : '';
+      const aIsToday = aCheckIn === todayStr || aCheckOut === todayStr ? 1 : 0;
+      const bIsToday = bCheckIn === todayStr || bCheckOut === todayStr ? 1 : 0;
       if (aIsToday !== bIsToday) return bIsToday - aIsToday;
-      return b.checkInDate.localeCompare(a.checkInDate);
+      return bCheckIn.localeCompare(aCheckIn);
     });
   }, [roleFilteredBookings, trackingSubFilter, todayStr]);
 
@@ -1418,9 +1705,9 @@ ${prop?.iban || 'SA0380000201608010998877'}
                       </div>
                     )}
 
-                    {/* 2. صف الأيقونات التفاعلية (أفقي في صف واحد) */}
+                    {/* 2. صف الأيقونات التفاعلية (أفقي في صف واحد مرتب حسب الطلب) */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50/80 p-2 sm:p-2.5 rounded-xl border border-slate-200/80">
-                      {/* الأيقونة الأولى (💬 تذكير الحجز) */}
+                      {/* 1- تذكير الحجز */}
                       <button
                         type="button"
                         onClick={() => openWelcomeReminderModal(bk)}
@@ -1431,45 +1718,7 @@ ${prop?.iban || 'SA0380000201608010998877'}
                         <span className="truncate">💬 تذكير الحجز</span>
                       </button>
 
-                      {/* الأيقونة الثانية (💳 المتبقي [المبلغ ر.س]) */}
-                      <button
-                        type="button"
-                        onClick={() => openRemainingPaymentModal(bk)}
-                        className={`py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-95 ${
-                          isPaidInFull
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : 'bg-white hover:bg-amber-50 text-amber-900 border-amber-300'
-                        }`}
-                        title="المتبقي: خيار دفع إيصال بنكي أو تسليم كاش للحارس"
-                      >
-                        <DollarSign className={`w-4 h-4 shrink-0 ${isPaidInFull ? 'text-emerald-600' : 'text-amber-600'}`} />
-                        <span className="truncate">
-                          {isPaidInFull ? '💳 المتبقي مسدد ✓' : `💳 المتبقي (${bk.remainingAmount} ر.س)`}
-                        </span>
-                      </button>
-
-                      {/* الأيقونة الثالثة (🛡️ التأمين [المبلغ ر.س]) */}
-                      <button
-                        type="button"
-                        onClick={() => openInsuranceActionModal(bk)}
-                        className={`py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-95 ${
-                          isInsurancePaid
-                            ? 'bg-sky-50 text-sky-900 border-sky-300'
-                            : 'bg-white hover:bg-sky-50 text-sky-900 border-sky-300'
-                        }`}
-                        title="التأمين: خيار دفع إيصال بنكي أو تسليم كاش للحارس"
-                      >
-                        <ShieldCheck className={`w-4 h-4 shrink-0 ${isInsurancePaid ? 'text-sky-600' : 'text-sky-700'}`} />
-                        <span className="truncate">
-                          {isInsurancePaid
-                            ? (bk.cashInsuranceConfirmedByGuard || bk.insurancePaymentMethod === 'cash' || bk.insuranceReceivedCash
-                                ? '🛡️ تأمين كاش مستلم ✓'
-                                : '🛡️ تأمين محول بنكياً ✓')
-                            : `🛡️ التأمين (${bk.insuranceAmount} ر.س)`}
-                        </span>
-                      </button>
-
-                      {/* مؤشر حالة الوصول: أداة سريعة (انتظار الوصول / وصل العميل) */}
+                      {/* 2- انتظار الوصول */}
                       <button
                         type="button"
                         onClick={() => handleToggleArrival(bk)}
@@ -1491,9 +1740,50 @@ ${prop?.iban || 'SA0380000201608010998877'}
                             : 'انتظار الوصول'}
                         </span>
                       </button>
+
+                      {/* 3- المتبقي */}
+                      <button
+                        type="button"
+                        onClick={() => openRemainingPaymentModal(bk)}
+                        className={`py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-95 ${
+                          isPaidInFull
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : 'bg-white hover:bg-amber-50 text-amber-900 border-amber-300'
+                        }`}
+                        title="المتبقي: خيار دفع إيصال بنكي أو تسليم كاش للحارس"
+                      >
+                        <DollarSign className={`w-4 h-4 shrink-0 ${isPaidInFull ? 'text-emerald-600' : 'text-amber-600'}`} />
+                        <span className="truncate">
+                          {isPaidInFull ? '💳 المتبقي مسدد ✓' : `💳 المتبقي (${bk.remainingAmount} ر.س)`}
+                        </span>
+                      </button>
+
+                      {/* 4- التأميين */}
+                      <button
+                        type="button"
+                        onClick={() => openInsuranceActionModal(bk)}
+                        className={`py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-95 ${
+                          isInsurancePaid
+                            ? 'bg-sky-50 text-sky-900 border-sky-300'
+                            : 'bg-white hover:bg-sky-50 text-sky-900 border-sky-300'
+                        }`}
+                        title="التأمين: خيار دفع إيصال بنكي أو تسليم كاش للحارس"
+                      >
+                        <ShieldCheck className={`w-4 h-4 shrink-0 ${isInsurancePaid ? 'text-sky-600' : 'text-sky-700'}`} />
+                        <span className="truncate">
+                          {isInsurancePaid
+                            ? (bk.cashInsuranceConfirmedByGuard || bk.insurancePaymentMethod === 'cash' || bk.insuranceReceivedCash
+                                ? '🛡️ تأمين كاش مستلم ✓'
+                                : '🛡️ تأمين محول بنكياً ✓')
+                            : `🛡️ التأمين (${bk.insuranceAmount} ر.س)`}
+                        </span>
+                      </button>
                     </div>
 
-                    {/* 3. الشريط المنسدل (أسفل البطاقة) */}
+                    {/* المستندات والإيصالات المرفقة (معاينة وتحميل فوري بضغطة زر) */}
+                    {renderBookingReceiptBadges(bk)}
+
+                    {/* 3. الشريط المنسدل (أسفل البطاقة): تفاصيل الحجز */}
                     <div className="pt-0.5">
                       <button
                         type="button"
@@ -1503,11 +1793,11 @@ ${prop?.iban || 'SA0380000201608010998877'}
                             ? 'bg-purple-100 text-purple-950 border-purple-300'
                             : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
                         }`}
-                        title="فتح أو إغلاق أزرار الاتصال والمراسلة وتفاصيل الحجز"
+                        title="عرض تفاصيل الحجز والملخص المالي"
                       >
                         <span className="flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-purple-700" />
-                          <span>أزرار الاتصال والمراسلة السريعة (العميل • الحارس • الإدارة) وتفاصيل الحجز</span>
+                          <Eye className="w-3.5 h-3.5 text-purple-700" />
+                          <span>تفاصيل الحجز والملخص المالي</span>
                         </span>
                         <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                       </button>
@@ -1515,103 +1805,20 @@ ${prop?.iban || 'SA0380000201608010998877'}
                       {/* القائمة المنسدلة عند الفتح */}
                       {isExpanded && (
                         <div className="mt-2.5 p-3 bg-slate-50 border border-purple-100 rounded-xl space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-150">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                            {/* 1. العميل (اتصال / واتساب) */}
-                            <div className="bg-white border border-emerald-200 rounded-xl p-2.5 space-y-1.5 shadow-2xs">
-                              <div className="flex items-center justify-between text-xs font-bold text-emerald-950">
-                                <span className="truncate">العميل: {bk.customerName}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <a
-                                  href={`tel:${bk.customerPhone}`}
-                                  className="flex-1 py-1.5 px-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center justify-center gap-1 transition-colors"
-                                  title={`اتصال هاتفي بالعميل (${bk.customerPhone})`}
-                                >
-                                  <Phone className="w-3 h-3 text-emerald-700" />
-                                  <span>اتصال</span>
-                                </a>
-                                <a
-                                  href={getWhatsAppCustomerUrl(bk.customerPhone, bk.customerName, bk.propertyName)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex-1 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1 transition-colors"
-                                  title={`واتساب العميل (${bk.customerPhone})`}
-                                >
-                                  <MessageCircle className="w-3 h-3 text-white" />
-                                  <span>واتساب</span>
-                                </a>
-                              </div>
-                            </div>
-
-                            {/* 2. الحارس (اتصال / واتساب) */}
-                            <div className="bg-white border border-sky-200 rounded-xl p-2.5 space-y-1.5 shadow-2xs">
-                              <div className="flex items-center justify-between text-xs font-bold text-sky-950">
-                                <span className="truncate">الحارس: {propGuard?.name || 'أبو راشد'}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <a
-                                  href={`tel:${propGuard?.phone || '0598881234'}`}
-                                  className="flex-1 py-1.5 px-2 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-bold border border-sky-200 flex items-center justify-center gap-1 transition-colors"
-                                  title={`اتصال بالحارس (${propGuard?.phone || '0598881234'})`}
-                                >
-                                  <Phone className="w-3 h-3 text-sky-700" />
-                                  <span>اتصال</span>
-                                </a>
-                                <a
-                                  href={getWhatsAppGuardUrl(bk)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex-1 py-1.5 px-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center justify-center gap-1 transition-colors"
-                                  title={`واتساب الحارس (${propGuard?.phone || '0598881234'})`}
-                                >
-                                  <MessageCircle className="w-3 h-3 text-white" />
-                                  <span>واتساب</span>
-                                </a>
-                              </div>
-                            </div>
-
-                            {/* 3. الإدارة (اتصال / واتساب) */}
-                            <div className="bg-white border border-purple-200 rounded-xl p-2.5 space-y-1.5 shadow-2xs">
-                              <div className="flex items-center justify-between text-xs font-bold text-purple-950">
-                                <span>الإدارة العامة</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <a
-                                  href="tel:0500000001"
-                                  className="flex-1 py-1.5 px-2 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-900 text-xs font-bold border border-purple-200 flex items-center justify-center gap-1 transition-colors"
-                                  title="اتصال هاتفي بالإدارة (0500000001)"
-                                >
-                                  <Phone className="w-3 h-3 text-purple-700" />
-                                  <span>اتصال</span>
-                                </a>
-                                <a
-                                  href={getWhatsAppAdminUrl(bk)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex-1 py-1.5 px-2 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold flex items-center justify-center gap-1 transition-colors"
-                                  title="واتساب الإدارة العامة"
-                                >
-                                  <MessageCircle className="w-3 h-3 text-white" />
-                                  <span>واتساب</span>
-                                </a>
-                              </div>
-                            </div>
-
-                            {/* 4. تفاصيل الحجز الكاملة */}
-                            <div className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-center shadow-2xs">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDetailsTitle('تفاصيل الحجز الكاملة');
-                                  setSelectedBookingForDetails(bk);
-                                }}
-                                className="w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-purple-950 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                                title="عرض كافة تفاصيل الحجز والعقد والخدمات"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>عرض تفاصيل الحجز</span>
-                              </button>
-                            </div>
+                          {/* زر تفاصيل الحجز الكاملة */}
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDetailsTitle('تفاصيل الحجز الكاملة');
+                                setSelectedBookingForDetails(bk);
+                              }}
+                              className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-purple-950 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+                              title="عرض كافة تفاصيل الحجز والعقد والخدمات"
+                            >
+                              <Eye className="w-4 h-4 text-purple-200" />
+                              <span>عرض تفاصيل الحجز الكاملة</span>
+                            </button>
                           </div>
 
                           {/* شريط الملخص المالي التفصيلي */}
@@ -1707,6 +1914,10 @@ ${prop?.iban || 'SA0380000201608010998877'}
                         <span className="font-mono text-xs text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100 font-bold whitespace-nowrap">
                           #{bk.bookingNumber}
                         </span>
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs flex items-center gap-1.5 whitespace-nowrap animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-rose-600" />
+                          <span>خروج اليوم ({bk.checkOutDate})</span>
+                        </span>
                         {bk.marketerName && (
                           <div className="text-xs font-bold text-purple-900 bg-purple-50/80 px-2.5 py-1 rounded-lg border border-purple-100 flex items-center gap-1 whitespace-nowrap">
                             <span className="text-slate-400 font-normal">المسوقة:</span>
@@ -1754,349 +1965,219 @@ ${prop?.iban || 'SA0380000201608010998877'}
                         </div>
                       </div>
 
-                      {/* فاصل رأسي خفيف للشاشات الكبيرة */}
-                      <div className="hidden 2xl:block h-8 w-px bg-slate-200/80 shrink-0" />
-
-                      {/* المجموعة 3: إجراءات المغادرة حسب الدور والصلاحيات + شريط منسدل ليظهر أزرار التفاعل والمراسلة */}
-                      <div className="flex items-center gap-2 flex-wrap 2xl:flex-nowrap justify-start 2xl:justify-end shrink-0">
-                        {/* 1. دور الحارس (isGuard = true) */}
-                        {isGuard && (
-                          <>
-                            {/* زر تأكيد النظافة والخروج (يخص الحارس) */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setGuardConfirm({ kind: 'exit', booking: bk });
-                              }}
-                              className={`py-2 px-3.5 sm:px-4 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 shadow-2xs ${
-                                bk.cleanlinessApproved || bk.checkedOut
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                                  : 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-xs active:scale-95'
-                              }`}
-                              title="مسؤولية الحارس: النقر على [تأكيد النظافة والخروج] لإغلاق دورة الحجز النشط"
-                            >
-                              <span className={`w-2.5 h-2.5 rounded-full ${bk.cleanlinessApproved || bk.checkedOut ? 'bg-emerald-500' : 'bg-white'}`} />
-                              <span>
-                                {bk.cleanlinessApproved || bk.checkedOut
-                                  ? `تم تأكيد النظافة والخروج ✓ ${bk.checkedOutAt || bk.cleanlinessApprovedAt ? `(${bk.checkedOutAt || bk.cleanlinessApprovedAt})` : ''}`
-                                  : 'تأكيد النظافة والخروج'}
-                              </span>
-                            </button>
-
-                            {/* حالة إرسال تذكير الخروج (عرض فقط للحارس بدون زر المسوقة) */}
-                            <div className="py-2 px-3 rounded-xl border border-purple-200 bg-purple-50 text-purple-900 text-xs sm:text-sm font-bold flex items-center gap-1.5">
-                              <span>
-                                {bk.checkoutReminderSent ? 'تذكير الخروج: تم الإرسال ✓' : 'تذكير الخروج: لم يُرسل'}
-                              </span>
-                            </div>
-                          </>
-                        )}
-
-                        {/* 2. دور المسوقة (!isGuard && !isAdmin) */}
-                        {!isGuard && !isAdmin && (
-                          <>
-                            {/* حالة الخروج والنظافة (عرض فقط للمسوقة لأن الزر يخص الحارس) */}
-                            <div className={`py-2 px-3.5 sm:px-4 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-2 shadow-2xs ${
-                              bk.cleanlinessApproved || bk.checkedOut
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                                : 'border-slate-200 bg-slate-50 text-slate-600'
-                            }`}>
-                              <span className={`w-2.5 h-2.5 rounded-full ${bk.cleanlinessApproved || bk.checkedOut ? 'bg-emerald-500' : 'bg-rose-400'}`} />
-                              <span>
-                                {bk.cleanlinessApproved || bk.checkedOut
-                                  ? `تم تأكيد الخروج والنظافة ✓ (${bk.checkedOutAt || bk.cleanlinessApprovedAt})`
-                                  : 'بانتظار خروج النزيل (الحارس)'}
-                              </span>
-                            </div>
-
-                            {/* زر المسوقة: تذكير بالخروج عبر واتساب */}
-                            <button
-                              type="button"
-                              onClick={() => handleMarketerSendCheckoutReminder(bk)}
-                              className={`py-2 px-3.5 sm:px-4 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 shadow-2xs ${
-                                bk.checkoutReminderSent
-                                  ? 'bg-purple-50 text-purple-900 border-purple-200 hover:bg-purple-100'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs active:scale-95'
-                              }`}
-                              title="مسؤولية المسوقة: إرسال قالب واتساب لتذكير النزيل بالخروج وتفادي خصم التأمين"
-                            >
-                              <MessageCircle className="w-4 h-4" />
-                              <span>
-                                {bk.checkoutReminderSent
-                                  ? `تم إرسال تذكير الخروج ✓ (${bk.checkoutReminderSentAt || ''})`
-                                  : 'تذكير بالخروج'}
-                              </span>
-                            </button>
-                          </>
-                        )}
-
-                        {/* 3. دور الإدارة (isAdmin = true) */}
-                        {isAdmin && (
-                          <>
-                            {/* زر الحارس: تأكيد النظافة والخروج */}
-                            <button
-                              type="button"
-                              onClick={() => openGuardInspectionModal(bk)}
-                              className={`py-2 px-3.5 sm:px-4 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 shadow-2xs ${
-                                bk.cleanlinessApproved || bk.checkedOut
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                                  : 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-xs active:scale-95'
-                              }`}
-                              title="إجراء الحارس: تأكيد النظافة والخروج"
-                            >
-                              <span className={`w-2.5 h-2.5 rounded-full ${bk.cleanlinessApproved || bk.checkedOut ? 'bg-emerald-500' : 'bg-white'}`} />
-                              <span>
-                                {bk.cleanlinessApproved || bk.checkedOut
-                                  ? `تم الخروج والنظافة ✓`
-                                  : 'تأكيد النظافة والخروج'}
-                              </span>
-                            </button>
-
-                            {/* زر المسوقة: تذكير بالخروج */}
-                            <button
-                              type="button"
-                              onClick={() => handleMarketerSendCheckoutReminder(bk)}
-                              className={`py-2 px-3.5 sm:px-4 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 shadow-2xs ${
-                                bk.checkoutReminderSent
-                                  ? 'bg-purple-50 text-purple-900 border-purple-200 hover:bg-purple-100'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs active:scale-95'
-                              }`}
-                              title="إجراء المسوقة: إرسال تذكير الخروج"
-                            >
-                              <MessageCircle className="w-4 h-4" />
-                              <span>
-                                {bk.checkoutReminderSent ? 'تم التذكير ✓' : 'تذكير بالخروج'}
-                              </span>
-                            </button>
-                          </>
-                        )}
-
-                        {/* أولاً: زر استرداد المحول (استرداد التأمين) */}
-                        <button
-                          type="button"
-                          onClick={() => openInsuranceRefundModal(bk)}
-                          className={`py-2 px-3.5 sm:px-4 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 shadow-2xs active:scale-95 ${
-                            bk.insuranceReturned
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                              : bk.insuranceRefundRequested
-                              ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                              : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-200'
-                          }`}
-                          title="استرداد المحول: تحويل بنكي برفع صورة الحساب أو تسليم كاش من الحارس مع تنبيهه واتس وبالنظام"
-                        >
-                          <RotateCcw className={`w-4 h-4 ${bk.insuranceReturned ? 'text-emerald-600' : 'text-purple-700'}`} />
-                          <span>
-                            {bk.insuranceReturned
-                              ? 'استرداد المحول (مسترد ✓)'
-                              : bk.insuranceRefundRequested
-                              ? `استرداد المحول (قيد المراجعة)`
-                              : `استرداد المحول (${bk.insuranceAmount} ر.س)`}
-                          </span>
-                        </button>
-
-                        {/* ثانياً: أيقونة وزر إنهاء الحجز (بجانب استرداد المحول) */}
-                        <button
-                          type="button"
-                          onClick={() => openFinishBookingModal(bk)}
-                          className={`py-2 px-3.5 sm:px-4 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 shadow-2xs active:scale-95 ${
-                            bk.status === 'completed'
-                              ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs'
-                          }`}
-                          title="إنهاء الحجز: خيار رفع إيصال التأمين مع إرساله فوراً للمسوقة والإدارة وإمكانية الإنهاء حتى لو كان كاش"
-                        >
-                          <CheckCircle2 className="w-4 h-4 text-white" />
-                          <span>
-                            {bk.status === 'completed' ? 'الحجز منتهي ✓' : 'إنهاء الحجز'}
-                          </span>
-                        </button>
-
-                        {/* 4. شريط منسدل ليظهر أزرار التفاعل والمراسلة */}
-                        <button
-                          type="button"
-                          onClick={() => toggleBookingExpanded(depKey)}
-                          className={`py-2 px-3.5 sm:px-4 rounded-xl text-xs sm:text-sm font-bold border transition-all cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap ${
-                            isExpanded
-                              ? 'bg-rose-700 text-white border-rose-700 shadow-xs'
-                              : 'bg-slate-50 hover:bg-slate-100 text-rose-900 border-rose-200 shadow-2xs hover:border-rose-300'
-                          }`}
-                          title="فتح أو إغلاق شريط أزرار التفاعل والمراسلة والملخص المالي للمغادرة"
-                        >
-                          <span>شريط منسدل ليظهر أزرار التفاعل والمراسلة</span>
-                          <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                        </button>
-                      </div>
                     </div>
 
-                    {/* الشريط المنسدل عند الفتح (أزرار التفاعل والمراسلة + التفاصيل المالية + تقرير الأضرار إن وجد) */}
-                    {isExpanded && (
-                      <div className="pt-2.5 border-t border-rose-100 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-                        {/* Damage & Deductions Banner (في حال رصد أضرار وعبث بالاستراحة) */}
-                        {bk.insuranceDeductionAmount && bk.insuranceDeductionAmount > 0 && (
-                          <div className="bg-amber-50/90 border border-amber-300 rounded-xl p-2.5 space-y-1.5 text-right text-xs">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5">
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                                <span className="font-bold text-amber-950">
-                                  تقرير الحارس: خصم أضرار ({bk.insuranceDeductionAmount} ر.س)
+                    {/* 2. صف الأيقونات التفاعلية لخروج اليوم (مرتب حسب الطلب بدقة: 1-تذكير خروج، 2-تأكيد النظافه والخروج، 3-استرداد التأمين، 4-إنهاء الحجز) */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50/80 p-2 sm:p-2.5 rounded-xl border border-slate-200/80 mt-3">
+                      {/* 1- تذكير خروج */}
+                      <button
+                        type="button"
+                        onClick={() => handleMarketerSendCheckoutReminder(bk)}
+                        className={`py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-95 ${
+                          bk.checkoutReminderSent
+                            ? 'bg-purple-50 text-purple-900 border-purple-200 hover:bg-purple-100'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs'
+                        }`}
+                        title="إرسال قالب واتساب لتذكير النزيل بموعد الخروج"
+                      >
+                        <MessageCircle className="w-4 h-4 shrink-0" />
+                        <span className="truncate">
+                          {bk.checkoutReminderSent ? 'تم التذكير ✓' : 'تذكير خروج'}
+                        </span>
+                      </button>
+
+                      {/* 2- تأكيد النظافه والخروج */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isGuard) {
+                            setGuardConfirm({ kind: 'exit', booking: bk });
+                          } else {
+                            openGuardInspectionModal(bk);
+                          }
+                        }}
+                        className={`py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-2xs hover:shadow-xs active:scale-95 ${
+                          bk.cleanlinessApproved || bk.checkedOut
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                            : 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-xs'
+                        }`}
+                        title="تأكيد النظافة والخروج وتوثيق إنهاء إقامة النزيل"
+                      >
+                        <span className={`w-2.5 h-2.5 rounded-full ${bk.cleanlinessApproved || bk.checkedOut ? 'bg-emerald-500' : 'bg-white animate-pulse'}`} />
+                        <span className="truncate">
+                          {bk.cleanlinessApproved || bk.checkedOut
+                            ? `تم الخروج والنظافة ✓`
+                            : 'تأكيد النظافه والخروج'}
+                        </span>
+                      </button>
+
+                      {/* 3- استرداد التأمين */}
+                      <button
+                        type="button"
+                        onClick={() => openInsuranceRefundModal(bk)}
+                        className={`py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-95 ${
+                          bk.insuranceReturned
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                            : bk.insuranceRefundRequested
+                            ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                            : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-200'
+                        }`}
+                        title="استرداد التأمين: تحويل بنكي برفع صورة الحساب أو تسليم كاش من الحارس"
+                      >
+                        <RotateCcw className={`w-4 h-4 shrink-0 ${bk.insuranceReturned ? 'text-emerald-600' : 'text-purple-700'}`} />
+                        <span className="truncate">
+                          {bk.insuranceReturned
+                            ? 'استرداد التأمين (مسترد ✓)'
+                            : bk.insuranceRefundRequested
+                            ? 'استرداد التأمين (قيد المراجعة)'
+                            : `استرداد التأمين (${bk.insuranceAmount} ر.س)`}
+                        </span>
+                      </button>
+
+                      {/* 4- إنهاء الحجز */}
+                      <button
+                        type="button"
+                        onClick={() => openFinishBookingModal(bk)}
+                        className={`py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-95 ${
+                          bk.status === 'completed'
+                            ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs'
+                        }`}
+                        title="إنهاء الحجز: خيار رفع إيصال التأمين مع إرساله فوراً للمسوقة والإدارة وإمكانية الإنهاء حتى لو كان كاش"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                        <span className="truncate">
+                          {bk.status === 'completed' ? 'الحجز منتهي ✓' : 'إنهاء الحجز'}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* المستندات والإيصالات المرفقة (معاينة وتحميل فوري بضغطة زر) */}
+                    {renderBookingReceiptBadges(bk)}
+
+                    {/* 3. الشريط المنسدل (أسفل البطاقة): تفاصيل الحجز */}
+                    <div className="pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleBookingExpanded(depKey)}
+                        className={`w-full py-2 px-3.5 sm:px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-between ${
+                          isExpanded
+                            ? 'bg-rose-100 text-rose-950 border-rose-300'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                        title="عرض تفاصيل الحجز والملخص المالي"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-rose-700" />
+                          <span>تفاصيل الحجز والملخص المالي للمغادرة</span>
+                        </span>
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {/* القائمة المنسدلة عند الفتح */}
+                      {isExpanded && (
+                        <div className="mt-2.5 p-3 bg-slate-50 border border-rose-100 rounded-xl space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                          {/* Damage & Deductions Banner (في حال رصد أضرار وعبث بالاستراحة) */}
+                          {bk.insuranceDeductionAmount && bk.insuranceDeductionAmount > 0 && (
+                            <div className="bg-amber-50/90 border border-amber-300 rounded-xl p-2.5 space-y-1.5 text-right text-xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                  <span className="font-bold text-amber-950">
+                                    تقرير الحارس: خصم أضرار ({bk.insuranceDeductionAmount} ر.س)
+                                  </span>
+                                </div>
+                                <span className="font-mono font-black text-xs text-rose-700 bg-white px-2 py-0.5 rounded-lg border border-rose-200 shrink-0">
+                                  خصم {bk.insuranceDeductionAmount} ر.س
                                 </span>
                               </div>
-                              <span className="font-mono font-black text-xs text-rose-700 bg-white px-2 py-0.5 rounded-lg border border-rose-200 shrink-0">
-                                خصم {bk.insuranceDeductionAmount} ر.س
-                              </span>
+                              {bk.damageDescription && (
+                                <p className="text-[11px] text-amber-900 leading-relaxed">
+                                  {bk.damageDescription}
+                                </p>
+                              )}
+                              {/* Damage Photos Preview */}
+                              {bk.damagePhotos && bk.damagePhotos.length > 0 && (
+                                <div className="flex items-center gap-1.5 overflow-x-auto pt-1">
+                                  {bk.damagePhotos.map((photo, pIdx) => (
+                                    <a
+                                      key={pIdx}
+                                      href={photo.dataUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="w-12 h-12 rounded-lg overflow-hidden border border-amber-300 bg-white shrink-0 cursor-pointer shadow-2xs"
+                                      title="اضغط لفتح الصورة"
+                                    >
+                                      <img
+                                        src={photo.dataUrl}
+                                        alt={photo.name}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            {bk.damageDescription && (
-                              <p className="text-[11px] text-amber-900 leading-relaxed">
-                                {bk.damageDescription}
-                              </p>
-                            )}
-                            {/* Damage Photos Preview */}
-                            {bk.damagePhotos && bk.damagePhotos.length > 0 && (
-                              <div className="flex items-center gap-1.5 overflow-x-auto pt-1">
-                                {bk.damagePhotos.map((photo, pIdx) => (
-                                  <a
-                                    key={pIdx}
-                                    href={photo.dataUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="w-12 h-12 rounded-lg overflow-hidden border border-amber-300 bg-white shrink-0 cursor-pointer shadow-2xs"
-                                    title="اضغط لفتح الصورة"
-                                  >
-                                    <img
-                                      src={photo.dataUrl}
-                                      alt={photo.name}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </a>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                          )}
 
-                        {/* شريط قنوات التواصل السريع المباشرة */}
-                        <div className="bg-slate-50/90 border border-slate-200/70 rounded-xl p-1.5 flex items-center justify-between gap-1 text-xs">
-                          <div className="grid grid-cols-4 gap-1.5 w-full">
-                            {/* 1. العميل (واتساب + اتصال) */}
-                            <div className="flex items-center justify-between bg-emerald-50/90 border border-emerald-200 rounded-lg p-1.5 text-[11px] font-bold text-emerald-800">
-                              <a
-                                href={getWhatsAppCustomerUrl(bk.customerPhone, bk.customerName, bk.propertyName)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 hover:text-emerald-950 truncate flex-1"
-                                title={`محادثة واتساب مع العميل (${bk.customerName})`}
-                              >
-                                <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span className="truncate">تواصل العميل</span>
-                              </a>
-                              <a
-                                href={`tel:${bk.customerPhone}`}
-                                className="p-1 hover:bg-emerald-100 rounded text-emerald-700 shrink-0"
-                                title={`اتصال هاتفي بالعميل (${bk.customerPhone})`}
-                              >
-                                <Phone className="w-3 h-3 text-emerald-600" />
-                              </a>
-                            </div>
-
-                            {/* 2. الحارس (واتساب + اتصال) */}
-                            <div className="flex items-center justify-between bg-sky-50/90 border border-sky-200 rounded-lg p-1.5 text-[11px] font-bold text-sky-800">
-                              <a
-                                href={getWhatsAppGuardUrl(bk)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 hover:text-sky-950 truncate flex-1"
-                                title={`محادثة واتساب مع الحارس (${guard?.name || 'أبو راشد'})`}
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                                <span className="truncate">تواصل الحارس</span>
-                              </a>
-                              <a
-                                href={`tel:${guard?.phone || '0598881234'}`}
-                                className="p-1 hover:bg-sky-100 rounded text-sky-700 shrink-0"
-                                title={`اتصال بالحارس (${guard?.phone || '0598881234'})`}
-                              >
-                                <Phone className="w-3 h-3 text-sky-600" />
-                              </a>
-                            </div>
-
-                            {/* 3. الإدارة (واتساب + اتصال) */}
-                            <div className="flex items-center justify-between bg-purple-50/90 border border-purple-200 rounded-lg p-1.5 text-[11px] font-bold text-purple-900">
-                              <a
-                                href={getWhatsAppAdminUrl(bk)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 hover:text-purple-950 truncate flex-1"
-                                title="محادثة واتساب مع الإدارة العامة"
-                              >
-                                <Building2 className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-                                <span className="truncate">تواصل الإدارة</span>
-                              </a>
-                              <a
-                                href="tel:0500000001"
-                                className="p-1 hover:bg-purple-100 rounded text-purple-800 shrink-0"
-                                title="اتصال هاتفي بالإدارة العامة (0500000001)"
-                              >
-                                <Phone className="w-3 h-3 text-purple-700" />
-                              </a>
-                            </div>
-
-                            {/* 4. تفاصيل الحجز */}
+                          {/* زر تفاصيل الحجز الكاملة */}
+                          <div>
                             <button
                               type="button"
                               onClick={() => {
                                 setDetailsTitle('تفاصيل الحجز الكاملة والتسوية');
                                 setSelectedBookingForDetails(bk);
                               }}
-                              className="flex items-center justify-center gap-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg p-1.5 text-[11px] font-bold text-slate-700 cursor-pointer transition-colors shadow-2xs"
+                              className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-purple-950 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
                               title="عرض كافة تفاصيل الحجز والتسوية"
                             >
-                              <Eye className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                              <span>تفاصيل الحجز</span>
+                              <Eye className="w-4 h-4 text-purple-200" />
+                              <span>عرض تفاصيل الحجز الكاملة والتسوية</span>
                             </button>
                           </div>
-                        </div>
 
-                        {/* شريط الملخص المالي التفصيلي للمغادرة */}
-                        <div className="grid grid-cols-4 gap-1.5 text-center text-xs bg-slate-50/90 p-1.5 rounded-xl border border-slate-100">
-                          <div className="bg-white py-1 px-1 rounded-lg border border-slate-100">
-                            <span className="text-[10px] text-slate-400 block font-medium">الإجمالي</span>
-                            <span className="font-mono font-bold text-slate-900 text-xs sm:text-sm">{bk.totalPrice} <span className="text-[9px] font-sans">ر.س</span></span>
+                          {/* شريط الملخص المالي التفصيلي للمغادرة */}
+                          <div className="grid grid-cols-4 gap-1.5 text-center text-xs bg-white p-2 rounded-xl border border-slate-200/80">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-medium">الإجمالي</span>
+                              <span className="font-mono font-bold text-slate-900 text-xs sm:text-sm">{bk.totalPrice} <span className="text-[9px] font-sans">ر.س</span></span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-rose-600 block font-medium">الرسوم</span>
+                              <span className="font-mono font-bold text-rose-700 text-xs sm:text-sm">{adminFee} <span className="text-[9px] font-sans">ر.س</span></span>
+                            </div>
+                            <div className="bg-purple-50/50 rounded-lg py-0.5">
+                              <span className="text-[10px] text-purple-700 block font-medium">الصافي</span>
+                              <span className="font-mono font-black text-purple-950 text-xs sm:text-sm">{netRevenue} <span className="text-[9px] font-sans">ر.س</span></span>
+                            </div>
+                            <div className="bg-emerald-50/50 rounded-lg py-0.5">
+                              <span className="text-[10px] text-emerald-700 block font-medium">العمولة ({effectivePercent}%)</span>
+                              <span className="font-mono font-black text-emerald-700 text-xs sm:text-sm">{effectiveComm} <span className="text-[9px] font-sans">ر.س</span></span>
+                            </div>
                           </div>
-                          <div className="bg-white py-1 px-1 rounded-lg border border-slate-100">
-                            <span className="text-[10px] text-rose-600 block font-medium">الرسوم</span>
-                            <span className="font-mono font-bold text-rose-700 text-xs sm:text-sm">{adminFee} <span className="text-[9px] font-sans">ر.س</span></span>
-                          </div>
-                          <div className="bg-white py-1 px-1 rounded-lg border border-purple-100 bg-purple-50/30">
-                            <span className="text-[10px] text-purple-700 block font-medium">الصافي</span>
-                            <span className="font-mono font-black text-purple-950 text-xs sm:text-sm">{netRevenue} <span className="text-[9px] font-sans">ر.س</span></span>
-                          </div>
-                          <div className="bg-white py-1 px-1 rounded-lg border border-emerald-100 bg-emerald-50/30">
-                            <span className="text-[10px] text-emerald-700 block font-medium">العمولة ({effectivePercent}%)</span>
-                            <span className="font-mono font-black text-emerald-700 text-xs sm:text-sm">{effectiveComm} <span className="text-[9px] font-sans">ر.س</span></span>
-                          </div>
-                        </div>
 
-                        {/* Admin 7% Quick Action / Status */}
-                        {isAdmin && (
-                          <div className="flex items-center justify-between gap-1.5 bg-purple-50/60 border border-purple-200/70 rounded-xl px-2.5 py-1 text-xs">
-                            <span className="text-[11px] text-purple-950 font-bold truncate">
-                              {isApproved7 ? 'معتمد 7% كحجز كامل ✓' : 'نسبة 5% (يمكن الاعتماد لـ 7%)'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => toggleAdminCommissionApproval(bk.id)}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border cursor-pointer transition-all ${
-                                isApproved7
-                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                                  : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
-                              }`}
-                            >
-                              {isApproved7 ? 'إلغاء 7%' : 'اعتماد 7%'}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                          {/* Admin 7% Quick Action / Status */}
+                          {isAdmin && (
+                            <div className="flex items-center justify-between gap-1.5 bg-purple-50/60 border border-purple-200/70 rounded-xl px-2.5 py-1 text-xs">
+                              <span className="text-[11px] text-purple-950 font-bold truncate">
+                                {isApproved7 ? 'معتمد 7% كحجز كامل ✓' : 'نسبة 5% (يمكن الاعتماد لـ 7%)'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleAdminCommissionApproval(bk.id)}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border cursor-pointer transition-all ${
+                                  isApproved7
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                    : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
+                                }`}
+                              >
+                                {isApproved7 ? 'إلغاء 7%' : 'اعتماد 7%'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -2223,7 +2304,7 @@ ${prop?.iban || 'SA0380000201608010998877'}
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  حجوزات خروجها اليوم ({roleFilteredBookings.filter((b) => b.status !== 'cancelled' && b.checkOutDate === todayStr).length})
+                  حجوزات خروجها اليوم ({roleFilteredBookings.filter((b) => b.status !== 'cancelled' && (b.checkOutDate ? b.checkOutDate.split('T')[0].trim() : '') === todayStr).length})
                 </button>
               </div>
             </div>
@@ -2276,12 +2357,12 @@ ${prop?.iban || 'SA0380000201608010998877'}
                             </span>
 
                             {/* 🌟 الشارة الزمنية البارزة للعميل (دخوله اليوم / خروجه اليوم / تاريخ الدخول الفعلي) */}
-                            {bk.checkInDate === todayStr ? (
+                            {(bk.checkInDate ? bk.checkInDate.split('T')[0].trim() : '') === todayStr ? (
                               <span className="px-3 py-1 rounded-full text-xs font-black bg-sky-100 text-sky-800 border border-sky-300 shadow-2xs flex items-center gap-1.5 animate-pulse">
                                 <span className="w-2 h-2 rounded-full bg-sky-600" />
                                 <span>دخوله اليوم</span>
                               </span>
-                            ) : bk.checkOutDate === todayStr ? (
+                            ) : (bk.checkOutDate ? bk.checkOutDate.split('T')[0].trim() : '') === todayStr ? (
                               <span className="px-3 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs flex items-center gap-1.5 animate-pulse">
                                 <span className="w-2 h-2 rounded-full bg-rose-600" />
                                 <span>خروجه اليوم</span>
@@ -2461,103 +2542,8 @@ ${prop?.iban || 'SA0380000201608010998877'}
                       </div>
                     </div>
 
-                    {/* صف أزرار الإجراءات السريعة وحالة الحجز */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 bg-slate-50/80 p-2 sm:p-2.5 rounded-xl border border-slate-200/80">
-                      {/* تذكير الحجز */}
-                      <button
-                        type="button"
-                        onClick={() => openWelcomeReminderModal(bk)}
-                        className="py-2 px-2.5 rounded-xl border border-purple-200 bg-white hover:bg-purple-50 text-purple-900 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
-                        title="تذكير الحجز والترحيب"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-                        <span className="truncate">💬 تذكير الحجز</span>
-                      </button>
-
-                      {/* المتبقي */}
-                      <button
-                        type="button"
-                        onClick={() => openRemainingPaymentModal(bk)}
-                        className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs ${
-                          isPaidInFull
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : 'bg-white hover:bg-amber-50 text-amber-900 border-amber-300'
-                        }`}
-                        title="المتبقي: إيصال بنكي أو كاش للحارس"
-                      >
-                        <DollarSign className={`w-3.5 h-3.5 shrink-0 ${isPaidInFull ? 'text-emerald-600' : 'text-amber-600'}`} />
-                        <span className="truncate">
-                          {isPaidInFull ? '💳 المتبقي مسدد ✓' : `💳 المتبقي (${bk.remainingAmount})`}
-                        </span>
-                      </button>
-
-                      {/* التأمين */}
-                      <button
-                        type="button"
-                        onClick={() => openInsuranceActionModal(bk)}
-                        className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs ${
-                          isInsurancePaid
-                            ? 'bg-sky-50 text-sky-900 border-sky-300'
-                            : 'bg-white hover:bg-sky-50 text-sky-900 border-sky-300'
-                        }`}
-                        title="التأمين: بنكي أو كاش"
-                      >
-                        <ShieldCheck className={`w-3.5 h-3.5 shrink-0 ${isInsurancePaid ? 'text-sky-600' : 'text-sky-700'}`} />
-                        <span className="truncate">
-                          {isInsurancePaid ? '🛡️ التأمين مستلم ✓' : `🛡️ التأمين (${bk.insuranceAmount})`}
-                        </span>
-                      </button>
-
-                      {/* استرداد المحول */}
-                      <button
-                        type="button"
-                        onClick={() => openInsuranceRefundModal(bk)}
-                        className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs ${
-                          bk.insuranceReturned
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : bk.insuranceRefundRequested
-                            ? 'bg-amber-50 text-amber-900 border-amber-300'
-                            : 'bg-white hover:bg-purple-50 text-purple-900 border-purple-200'
-                        }`}
-                        title="استرداد المحول"
-                      >
-                        <RotateCcw className={`w-3.5 h-3.5 shrink-0 ${bk.insuranceReturned ? 'text-emerald-600' : 'text-purple-700'}`} />
-                        <span className="truncate">
-                          {bk.insuranceReturned ? 'استرداد (مسترد ✓)' : 'استرداد المحول'}
-                        </span>
-                      </button>
-
-                      {/* إنهاء الحجز */}
-                      <button
-                        type="button"
-                        onClick={() => openFinishBookingModal(bk)}
-                        className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs ${
-                          bk.status === 'completed'
-                            ? 'bg-emerald-700 text-white border-emerald-700'
-                            : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
-                        }`}
-                        title="إنهاء الحجز"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5 text-white shrink-0" />
-                        <span className="truncate">
-                          {bk.status === 'completed' ? 'الحجز منتهي ✓' : 'إنهاء الحجز'}
-                        </span>
-                      </button>
-
-                      {/* التفاصيل الكاملة */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDetailsTitle('تفاصيل الحجز الكاملة');
-                          setSelectedBookingForDetails(bk);
-                        }}
-                        className="py-2 px-2.5 rounded-xl bg-slate-900 hover:bg-purple-950 text-white text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-                        title="عرض تفاصيل الحجز"
-                      >
-                        <Eye className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">عرض التفاصيل</span>
-                      </button>
-                    </div>
+                    {/* المستندات والإيصالات المرفقة (معاينة وتحميل فوري بضغطة زر) */}
+                    {renderBookingReceiptBadges(bk)}
 
                     {/* الشريط المنسدل السفلي للتواصل السريع (اتصال / واتساب) */}
                     <div>
@@ -2861,18 +2847,161 @@ ${prop?.iban || 'SA0380000201608010998877'}
                 </span>
               </div>
 
-              {selectedBookingForDetails.paymentReceiptName && (
-                <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                  <span className="text-slate-500">إيصال إكمال الدفع:</span>
-                  <button
-                    onClick={() => setViewReceiptBooking(selectedBookingForDetails)}
-                    className="font-bold text-emerald-700 flex items-center gap-1 cursor-pointer"
-                  >
-                    <Paperclip className="w-3.5 h-3.5" />
-                    <span>عرض الإيصال ({selectedBookingForDetails.paymentCompletedAt})</span>
-                  </button>
+              {/* المستندات والإيصالات المرفقة للحجز */}
+              <div className="py-2 border-b border-slate-100 space-y-2">
+                <span className="text-slate-700 font-bold text-xs flex items-center gap-1.5">
+                  <Paperclip className="w-3.5 h-3.5 text-purple-700" />
+                  <span>الإيصالات والمستندات المرفقة:</span>
+                </span>
+                
+                <div className="space-y-1.5">
+                  {selectedBookingForDetails.paymentReceiptName ? (
+                    <div className="flex items-center justify-between bg-emerald-50/70 border border-emerald-200 p-2 rounded-xl text-xs">
+                      <span className="font-bold text-emerald-950 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span>إيصال سداد المتبقي</span>
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openReceiptModal('remaining', selectedBookingForDetails)}
+                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>معاينة</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadReceipt(selectedBookingForDetails.paymentReceiptDataUrl, selectedBookingForDetails.paymentReceiptName || `payment-${selectedBookingForDetails.bookingNumber}.png`)}
+                          className="p-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg cursor-pointer"
+                          title="تحميل الإيصال"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(selectedBookingForDetails.digitalInsuranceReceiptUrl || selectedBookingForDetails.insuranceReceiptDataUrl || selectedBookingForDetails.insuranceReceiptName) ? (
+                    <div className="flex items-center justify-between bg-sky-50/70 border border-sky-200 p-2 rounded-xl text-xs">
+                      <span className="font-bold text-sky-950 flex items-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-sky-600" />
+                        <span>إيصال التأمين</span>
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openReceiptModal('insurance', selectedBookingForDetails)}
+                          className="px-2 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>معاينة</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadReceipt(selectedBookingForDetails.digitalInsuranceReceiptUrl || selectedBookingForDetails.insuranceReceiptDataUrl, selectedBookingForDetails.digitalInsuranceReceiptName || selectedBookingForDetails.insuranceReceiptName || `insurance-${selectedBookingForDetails.bookingNumber}.png`)}
+                          className="p-1 bg-sky-700 hover:bg-sky-800 text-white rounded-lg cursor-pointer"
+                          title="تحميل الإيصال"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {selectedBookingForDetails.customerBankReceiptUrl ? (
+                    <div className="flex items-center justify-between bg-purple-50/70 border border-purple-200 p-2 rounded-xl text-xs">
+                      <span className="font-bold text-purple-950 flex items-center gap-1">
+                        <Wallet className="w-3 h-3 text-purple-600" />
+                        <span>حساب العميل (استرداد)</span>
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openReceiptModal('customer_account', selectedBookingForDetails)}
+                          className="px-2 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>معاينة</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadReceipt(selectedBookingForDetails.customerBankReceiptUrl, selectedBookingForDetails.customerBankReceiptName || `iban-${selectedBookingForDetails.bookingNumber}.png`)}
+                          className="p-1 bg-purple-800 hover:bg-purple-900 text-white rounded-lg cursor-pointer"
+                          title="تحميل حساب العميل"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {selectedBookingForDetails.insuranceRefundReceiptUrl ? (
+                    <div className="flex items-center justify-between bg-teal-50/70 border border-teal-200 p-2 rounded-xl text-xs">
+                      <span className="font-bold text-teal-950 flex items-center gap-1">
+                        <RotateCcw className="w-3 h-3 text-teal-600" />
+                        <span>إيصال استرداد التأمين</span>
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openReceiptModal('refund', selectedBookingForDetails)}
+                          className="px-2 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>معاينة</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadReceipt(selectedBookingForDetails.insuranceRefundReceiptUrl, selectedBookingForDetails.insuranceRefundReceiptName || `refund-${selectedBookingForDetails.bookingNumber}.png`)}
+                          className="p-1 bg-teal-700 hover:bg-teal-800 text-white rounded-lg cursor-pointer"
+                          title="تحميل إيصال الاسترداد"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {selectedBookingForDetails.depositReceiptUrl ? (
+                    <div className="flex items-center justify-between bg-amber-50/70 border border-amber-200 p-2 rounded-xl text-xs">
+                      <span className="font-bold text-amber-950 flex items-center gap-1">
+                        <DollarSign className="w-3 h-3 text-amber-600" />
+                        <span>إيصال العربون</span>
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openReceiptModal('deposit', selectedBookingForDetails)}
+                          className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>معاينة</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadReceipt(selectedBookingForDetails.depositReceiptUrl, `deposit-${selectedBookingForDetails.bookingNumber}.png`)}
+                          className="p-1 bg-amber-700 hover:bg-amber-800 text-white rounded-lg cursor-pointer"
+                          title="تحميل إيصال العربون"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!selectedBookingForDetails.paymentReceiptName &&
+                   !selectedBookingForDetails.digitalInsuranceReceiptUrl &&
+                   !selectedBookingForDetails.insuranceReceiptDataUrl &&
+                   !selectedBookingForDetails.customerBankReceiptUrl &&
+                   !selectedBookingForDetails.insuranceRefundReceiptUrl &&
+                   !selectedBookingForDetails.depositReceiptUrl && (
+                    <div className="text-slate-400 text-[11px] italic py-1">
+                      لا توجد إيصالات مرفقة محفوظة لهذا الحجز حالياً.
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
 
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">المسوق المعتمد:</span>
@@ -2908,10 +3037,179 @@ ${prop?.iban || 'SA0380000201608010998877'}
         </div>
       )}
 
-      {/* View Receipt Modal */}
-      {viewReceiptBooking && (
+      {/* Comprehensive Receipt Viewer Modal - معاينة وحفظ وتحميل الإيصال بضغطة زر */}
+      {activeReceiptViewer && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 font-['Tajawal',sans-serif] animate-in fade-in"
+          dir="rtl"
+          onClick={() => setActiveReceiptViewer(null)}
+        >
+          <div
+            className="bg-white rounded-3xl w-full max-w-2xl max-h-[94vh] overflow-hidden shadow-2xl border border-purple-200 flex flex-col text-right animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-purple-950 p-4 sm:p-5 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center text-purple-200 shadow-inner">
+                  <Paperclip className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm sm:text-base text-white">
+                    {activeReceiptViewer.title}
+                  </h4>
+                  <div className="flex items-center gap-2 text-[11px] text-purple-200 mt-0.5 flex-wrap">
+                    <span className="font-semibold bg-white/15 px-2 py-0.5 rounded-md">
+                      {activeReceiptViewer.receiptTypeName}
+                    </span>
+                    {activeReceiptViewer.uploadedBy && (
+                      <span>بواسطة: {activeReceiptViewer.uploadedBy}</span>
+                    )}
+                    {activeReceiptViewer.uploadedAt && (
+                      <span className="font-mono text-[10px] text-purple-300">
+                        ({activeReceiptViewer.uploadedAt})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveReceiptViewer(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer transition-colors"
+                title="إغلاق"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 bg-slate-50/50">
+              {/* Context Summary Cards */}
+              {activeReceiptViewer.booking && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 block">العقار</span>
+                    <span className="font-bold text-purple-900 truncate block">
+                      {activeReceiptViewer.booking.propertyName}
+                    </span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 block">النزيل</span>
+                    <span className="font-bold text-slate-900 truncate block">
+                      {activeReceiptViewer.booking.customerName}
+                    </span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 block">رقم التواصل</span>
+                    <span className="font-mono font-bold text-slate-800 dir-ltr text-right block">
+                      {activeReceiptViewer.booking.customerPhone}
+                    </span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 block">المبلغ المرتبط</span>
+                    <span className="font-mono font-black text-emerald-700 block">
+                      {activeReceiptViewer.amount !== undefined ? `${activeReceiptViewer.amount} ر.س` : '—'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Extra details if available (notes / IBAN) */}
+              {(activeReceiptViewer.customerIban || activeReceiptViewer.notes) && (
+                <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-xs space-y-1">
+                  {activeReceiptViewer.customerIban && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-amber-900 font-bold">الآيبان / الحساب البنكي:</span>
+                      <span className="font-mono font-bold text-slate-900 dir-ltr select-all">
+                        {activeReceiptViewer.customerIban}
+                      </span>
+                    </div>
+                  )}
+                  {activeReceiptViewer.notes && (
+                    <div className="text-amber-950">
+                      <span className="font-bold">ملاحظات: </span>
+                      <span>{activeReceiptViewer.notes}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Image Preview Container */}
+              <div className="bg-white border-2 border-slate-200 rounded-2xl p-2 sm:p-3 shadow-xs flex items-center justify-center min-h-[220px]">
+                {activeReceiptViewer.receiptUrl ? (
+                  activeReceiptViewer.receiptUrl.startsWith('data:image') ||
+                  activeReceiptViewer.receiptUrl.startsWith('http') ||
+                  activeReceiptViewer.receiptUrl.startsWith('/') ||
+                  activeReceiptViewer.receiptUrl.startsWith('blob:') ? (
+                    <div className="relative group max-w-full">
+                      <img
+                        src={activeReceiptViewer.receiptUrl}
+                        alt={activeReceiptViewer.title}
+                        className="max-h-[52vh] w-auto max-w-full rounded-xl object-contain mx-auto shadow-xs border border-slate-100"
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-center py-10 text-slate-500 space-y-2">
+                      <FileText className="w-12 h-12 text-slate-400 mx-auto" />
+                      <p className="font-bold text-slate-700">{activeReceiptViewer.receiptName || 'مستند مرفق'}</p>
+                      <p className="text-xs text-slate-400">الملف غير متاح كصورة قابلة للعرض المباشر</p>
+                    </div>
+                  )
+                ) : (
+                  <div className="text-center py-10 text-slate-400 space-y-2">
+                    <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
+                    <p className="font-bold text-slate-600">لا يوجد ملف إيصال مرفق لهذا الإجراء</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="p-3.5 sm:p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+              <div className="flex items-center gap-2 flex-wrap flex-1">
+                {activeReceiptViewer.receiptUrl && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadReceipt(activeReceiptViewer.receiptUrl, activeReceiptViewer.receiptName)}
+                      className="flex-1 min-w-[170px] py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer btn-beam-shine"
+                      title="حفظ الصورة وتحميلها مباشرة إلى جهازك"
+                    >
+                      <Download className="w-4 h-4 text-emerald-100" />
+                      <span>حفظ الصورة / تحميل بضغطة زر واحدة</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => window.open(activeReceiptViewer.receiptUrl, '_blank')}
+                      className="py-2.5 px-3.5 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                      title="فتح الصورة بالحجم الكامل في نافذة مستقلة"
+                    >
+                      <ExternalLink className="w-4 h-4 text-purple-700" />
+                      <span>فتح بالحجم الكامل</span>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveReceiptViewer(null)}
+                className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs cursor-pointer transition-colors"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Receipt Modal (Fallback) */}
+      {viewReceiptBooking && !activeReceiptViewer && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 font-['Tajawal',sans-serif]"
           onClick={() => setViewReceiptBooking(null)}
         >
           <div
@@ -2943,6 +3241,26 @@ ${prop?.iban || 'SA0380000201608010998877'}
                 {viewReceiptBooking.paymentReceiptName || 'ملف الإيصال المرفق'}
               </div>
             )}
+
+            <div className="pt-2 flex items-center gap-2">
+              {viewReceiptBooking.paymentReceiptDataUrl && (
+                <button
+                  type="button"
+                  onClick={() => handleDownloadReceipt(viewReceiptBooking.paymentReceiptDataUrl, viewReceiptBooking.paymentReceiptName)}
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>حفظ وتحميل الصورة</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setViewReceiptBooking(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
           </div>
         </div>
       )}
